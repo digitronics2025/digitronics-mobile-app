@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.maroc.digitronics",
+      "sha256_cert_fingerprints": [
+        "PLAY_SIGNING_SHA256",
+        "3C:06:E4:3D:77:5A:1E:57:1D:6C:7D:0C:84:87:9E:2D:0D:9E:09:F2:DA:01:7C:51:E8:74:DE:99:CD:A2:DA:65"
+      ]
+    }
+  }
+]
