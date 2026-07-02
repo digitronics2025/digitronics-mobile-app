@@ -1,0 +1,26 @@
+name: CI
+
+# Validates every change to the Flutter code. No secrets required — this only
+# analyzes and unit-tests the Dart, it does not build the Android bundle.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  analyze:
+    name: Analyze & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter --version
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
