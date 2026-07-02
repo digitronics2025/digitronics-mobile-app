@@ -152,6 +152,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
         body: Stack(
           children: [
             SafeArea(
+              // Let the site run to the bottom edge — the website handles its
+              // own bottom inset, so a bottom safe-area here just adds a white
+              // gap below the site's nav bar.
+              bottom: false,
               child: _isOffline
                   ? OfflineScreen(onRetry: _retryConnection)
                   : Stack(
