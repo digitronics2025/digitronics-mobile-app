@@ -51,3 +51,6 @@ android/app/google-services.json
 android/key.properties
 *.jks
 *.keystore
+
+# local secrets - never commit
+.env
