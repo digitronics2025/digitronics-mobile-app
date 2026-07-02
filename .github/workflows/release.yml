@@ -90,11 +90,12 @@ jobs:
           path: build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
 
-      # Opt-in publish: only on a manual run with the box ticked AND the
-      # service-account secret present. Uploads as a DRAFT to the internal track,
-      # so you still promote to production by hand in the Play Console.
+      # Opt-in publish: only on a manual run with the box ticked. Uploads as a
+      # DRAFT to the internal track, so you still promote to production by hand
+      # in the Play Console. (The step fails clearly if PLAY_SERVICE_ACCOUNT_JSON
+      # is unset — the `secrets` context is not allowed in an `if:`.)
       - name: Publish to Google Play (internal, draft)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
