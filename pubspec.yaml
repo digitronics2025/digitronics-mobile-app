@@ -1,7 +1,7 @@
 name: digitronics
 description: "Digitronics - Official mobile app for digitronics.ma"
 publish_to: 'none'
-version: 1.0.9+9
+version: 1.0.10+10
 
 environment:
   sdk: ^3.8.1
@@ -30,18 +30,23 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/icon/app_icon.png"
-  adaptive_icon_background: "assets/icon/adaptive_bg.png"
+  # Transparent sphere (not the dark-navy tile) so the icon reads as the logo.
+  image_path: "assets/icon/app_icon_foreground.png"
+  # Clean white background instead of the old black/navy box the logo sat on.
+  adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
 
 flutter_native_splash:
-  color: "#FFFFFF"
+  # Brand red so the OS splash flows seamlessly into the red Flutter splash
+  # (was white/pink, which clashed on launch).
+  color: "#E4232B"
   image: "assets/splash/splash_logo.png"
   android: true
   ios: false
   android_12:
-    color: "#FFFFFF"
+    color: "#E4232B"
     image: "assets/splash/splash_logo.png"
+    icon_background_color: "#E4232B"
 
 flutter:
   uses-material-design: true

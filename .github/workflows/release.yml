@@ -81,6 +81,12 @@ jobs:
           EOF
 
       - run: flutter pub get
+
+      # Regenerate launcher icons + native splash from pubspec so the shipped app
+      # picks up the current brand assets (white icon background, red OS splash).
+      - run: dart run flutter_launcher_icons
+      - run: dart run flutter_native_splash:create
+
       - run: flutter build appbundle --release
 
       - name: Upload AAB artifact
