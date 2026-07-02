@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
-import 'screens/splash_screen.dart';
+import 'screens/webview_screen.dart';
+
+/// Digitronics brand red — used as the Material color seed so progress
+/// indicators, snackbars and controls match the logo and splash.
+const Color kBrandRed = Color(0xFFDD3333);
 
 class DigitronicsApp extends StatelessWidget {
   const DigitronicsApp({super.key});
@@ -7,15 +11,18 @@ class DigitronicsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Digitronics',
+      title: 'Digitronics.ma',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorSchemeSeed: Colors.blue,
+        colorSchemeSeed: kBrandRed,
         useMaterial3: true,
         brightness: Brightness.light,
       ),
       themeMode: ThemeMode.light,
-      home: const SplashScreen(),
+      // WebViewScreen owns the launch experience: it starts loading the site
+      // immediately and shows the animated splash as an overlay, so the user
+      // never waits through a splash and *then* a blank page load.
+      home: const WebViewScreen(),
     );
   }
 }

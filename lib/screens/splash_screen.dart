@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'webview_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -111,15 +110,8 @@ class _SplashScreenState extends State<SplashScreen>
     Future.delayed(const Duration(milliseconds: 2000), () {
       if (mounted) _arabicController.forward();
     });
-
-    // Navigate after all animations complete + pause
-    Timer(const Duration(seconds: 5), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const WebViewScreen()),
-        );
-      }
-    });
+    // Note: this widget is an overlay owned by WebViewScreen — it does not
+    // navigate. WebViewScreen removes it once the site has loaded.
   }
 
   @override

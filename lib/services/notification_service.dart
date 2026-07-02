@@ -1,14 +1,28 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Handle background messages
+  // Notification messages are rendered by the system tray automatically while
+  // the app is backgrounded/terminated. Taps are handled via getInitialMessage
+  // and onMessageOpenedApp, so no work is needed here.
 }
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
+
+  /// URL carried by a tapped notification. [WebViewScreen] listens to this and
+  /// deep-links into the target page. Null when nothing is pending.
+  static final ValueNotifier<String?> pendingUrl = ValueNotifier<String?>(null);
+
+  /// Backend endpoint that stores FCM tokens for targeted campaigns.
+  static const String _registerEndpoint =
+      'https://digitronics.ma/api/v1/push/register';
 
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
     'digitronics_channel',
@@ -22,15 +36,24 @@ class NotificationService {
 
     await _setupLocalNotifications();
     await _requestPermission();
-    await _getToken();
+    await _registerToken();
     _listenForegroundMessages();
+    _listenNotificationTaps();
   }
 
   static Future<void> _setupLocalNotifications() async {
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidSettings);
-    await _localNotifications.initialize(settings: initSettings);
+    await _localNotifications.initialize(
+      settings: initSettings,
+      onDidReceiveNotificationResponse: (response) {
+        final payload = response.payload;
+        if (payload != null && payload.isNotEmpty) {
+          pendingUrl.value = payload;
+        }
+      },
+    );
 
     await _localNotifications
         .resolvePlatformSpecificImplementation<
@@ -46,12 +69,40 @@ class NotificationService {
     );
   }
 
-  static Future<void> _getToken() async {
-    final token = await FirebaseMessaging.instance.getToken();
-    // TODO: Send token to your backend server
-    if (token != null) {
-      // ignore: avoid_print
-      print('FCM Token: $token');
+  /// Subscribe to the broadcast topic, then register the device token with the
+  /// backend so campaigns can target this device. Re-registers on refresh.
+  static Future<void> _registerToken() async {
+    try {
+      final messaging = FirebaseMessaging.instance;
+      await messaging.subscribeToTopic('all');
+      final token = await messaging.getToken();
+      if (token != null) {
+        await _sendToken(token);
+      }
+      messaging.onTokenRefresh.listen(_sendToken);
+    } catch (_) {
+      // Non-fatal: notifications still display; only server targeting is lost.
+    }
+  }
+
+  static Future<void> _sendToken(String token) async {
+    try {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 10);
+      final request = await client.postUrl(Uri.parse(_registerEndpoint));
+      request.headers.contentType = ContentType.json;
+      // Identify app traffic in logs and to the WAF (see /push/register route).
+      request.headers.set(HttpHeaders.userAgentHeader,
+          'DigitronicsApp/1.0 (Android; FCM-register)');
+      request.add(utf8.encode(jsonEncode({
+        'token': token,
+        'platform': 'android',
+      })));
+      final response = await request.close();
+      await response.drain<void>();
+      client.close();
+    } catch (_) {
+      // Ignore network errors; the token is re-sent on next launch / refresh.
     }
   }
 
@@ -72,7 +123,30 @@ class NotificationService {
             icon: '@mipmap/ic_launcher',
           ),
         ),
+        payload: _urlFrom(message),
       );
     });
+  }
+
+  /// Handle taps that bring the app to the foreground from a system-tray
+  /// notification, both from a cold start and while backgrounded.
+  static void _listenNotificationTaps() {
+    FirebaseMessaging.instance.getInitialMessage().then((message) {
+      if (message != null) _routeMessage(message);
+    });
+    FirebaseMessaging.onMessageOpenedApp.listen(_routeMessage);
+  }
+
+  static void _routeMessage(RemoteMessage message) {
+    final url = _urlFrom(message);
+    if (url != null) pendingUrl.value = url;
+  }
+
+  /// Extract a target URL from a message's data payload, if present.
+  static String? _urlFrom(RemoteMessage message) {
+    final data = message.data;
+    final url = data['url'] ?? data['link'] ?? data['click_action'];
+    if (url is String && url.isNotEmpty) return url;
+    return null;
   }
 }
