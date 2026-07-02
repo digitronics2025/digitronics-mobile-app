@@ -1,7 +1,7 @@
 name: digitronics
 description: "Digitronics - Official mobile app for digitronics.ma"
 publish_to: 'none'
-version: 1.0.10+10
+version: 1.0.11+11
 
 environment:
   sdk: ^3.8.1
@@ -40,12 +40,14 @@ flutter_native_splash:
   # Brand red so the OS splash flows seamlessly into the red Flutter splash
   # (was white/pink, which clashed on launch).
   color: "#E4232B"
-  image: "assets/splash/splash_logo.png"
+  # Sphere with transparent margins so the full round logo floats on red
+  # (splash_logo.png is a tight square crop that showed hard corners).
+  image: "assets/icon/app_icon_foreground.png"
   android: true
   ios: false
   android_12:
     color: "#E4232B"
-    image: "assets/splash/splash_logo.png"
+    image: "assets/icon/app_icon_foreground.png"
     icon_background_color: "#E4232B"
 
 flutter:
