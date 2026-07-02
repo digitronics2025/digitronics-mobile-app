@@ -96,6 +96,17 @@ jobs:
           path: build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
 
+      # Installable APK for sideloading onto a phone to preview a build without
+      # going through the Play Store. Signed with the same release key.
+      - run: flutter build apk --release
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
       # Opt-in publish: only on a manual run with the box ticked. Uploads as a
       # DRAFT to the internal track, so you still promote to production by hand
       # in the Play Console. (The step fails clearly if PLAY_SERVICE_ACCOUNT_JSON
