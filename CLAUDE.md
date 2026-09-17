@@ -18,35 +18,29 @@ repo).
 
 ---
 
-<!-- BEGIN operator-conventions: managed block, regenerated from digitronics2025/claude-config -->
+<!-- BEGIN operator-conventions: regenerated from digitronics2025/claude-config -->
 ## Reply contract — every task-closing reply
 
-Close every task-closing reply with these three, in this order, and nothing after them:
+End every task-closing reply with these three, in order, nothing after:
 
-1. A plain recap, **3 sentences max** — no paths, hashes or jargon ("saved" not
-   "commit", "sent live" not "deploy"). Shipped work may instead use the five-part
-   form (what changed / what was wrong / before → after / what it gets you /
-   what's next), ~180 words.
-2. A **Grandma summary** — 2-4 plain sentences, no tool, file, product or model
-   names, saying what it means for the shop rather than what was done. Unverified
-   stays unverified: "it should be sorted, I'm waiting to see it with my own eyes".
-3. A **What you need to do** block — numbered steps (1-5), each naming the exact
-   button to tap and what they should see, or exactly `Nothing — you're all set.`
-   Never empty, never "just" or "simply". Anything the user must do goes ONLY here.
+1. **Plain recap**, 3 sentences, no paths/hashes/jargon ("saved" not "commit",
+   "sent live" not "deploy"); shipped work may use the five-part form
+   (changed / was wrong / before→after / gain / next), ~180 words.
+2. **Grandma summary**, 2-4 plain sentences, no tool, file or product names —
+   what it means for the shop. Unverified stays unverified.
+3. **What you need to do** — numbered steps naming the exact button and what
+   they should see, or exactly `Nothing — you're all set.` Never empty, never
+   "just". Anything the user must do goes ONLY here.
 
-"skip recap" silences 1 and 2; 3 still appears whenever it has content. "details"
-drops the cap on 1 and never removes 2 or 3. None of it applies to answers to
-technical questions, code, plans, commit messages or PR bodies.
+"skip recap" silences 1 and 2; 3 stays. Not for technical answers, code, plans or
+commit messages.
 
-On any open design choice prefer, in order: **maintainable > scalable > secure >
-production-ready > sustainable**, and record the trade-off in the commit message,
-not a code comment.
+Prefer **maintainable > scalable > secure > production-ready > sustainable**.
+Never report unverified work as done: checked, not verified, or could not check.
+Update the doc owning a behaviour in the same commit. Never commit a secret.
+Only this repo's tracked files and account-level skills reach a session off the
+operator's PC — never point at `~/.claude/...` or `C:\Users\...` unmarked.
 
-Only git-tracked files in THIS repo, plus account-level skills, reach a session
-that is not on the operator's own PC. Never write an instruction pointing at a
-path outside this repo — `~/.claude/...`, `C:\Users\...` — without marking it
-machine-local, or it reads as mandatory and silently cannot be followed.
-
-Canonical source, and the rules that are conditional rather than always-on:
+Conditional rules (branch model, approval, autopilot, machine-bound skills):
 [digitronics2025/claude-config](https://github.com/digitronics2025/claude-config)
-<!-- END operator-conventions -->
+<!-- END operator-conventions sha256:a49a9e0add0d -->
