@@ -2,7 +2,7 @@
 
 Part of the TenTen fleet (map: claude-config → `skills/tenten-fleet`).
 Update this file in the SAME commit as any change to a cross-repo contract.
-Last verified: 2026-08-21
+Last verified: 2026-10-24
 
 ## What this app is
 
@@ -25,8 +25,9 @@ None — client app.
 
 | Target | Surface | Auth | Notes |
 | --- | --- | --- | --- |
-| DigiTronics.ma website | WebView loads `https://digitronics.ma` ([lib/constants/urls.dart](./lib/constants/urls.dart)) | site session cookies | ⚠️ urls.dart still lists WooCommerce-era paths (`/shop/`, `/vous-panier/`…) predating the Next.js rebuild — verify before relying on them |
-| DigiTronics.ma API | `POST /api/v1/push/register` `{token, platform}` ([lib/services/notification_service.dart](./lib/services/notification_service.dart)) | **NONE** — only User-Agent `DigitronicsApp/1.0 (Android; FCM-register)`; fire-and-forget, re-sent on token refresh | server side (`app_push_tokens` table + WAF note) lives in the DigiTronics.ma repo |
+| DigiTronics.ma website | WebView opens the locale root `https://digitronics.ma/{fr,ar,en}` directly ([lib/constants/urls.dart](./lib/constants/urls.dart)); App Links and notification URLs open only `https://digitronics.ma` pages ([lib/services/link_router.dart](./lib/services/link_router.dart)) | site session cookies | The WooCommerce-era paths were removed on 24/10/2026. Renaming a locale root on the site breaks the app's first page |
+| DigiTronics.ma API | `POST /api/v1/push/register` `{token, platform, appVersion}` ([lib/services/notification_service.dart](./lib/services/notification_service.dart)) | **NONE** — only User-Agent `DigitronicsApp/<version> (Android; FCM-register)`; fire-and-forget, re-sent on token refresh | server side (`app_push_tokens` table + WAF note) lives in the DigiTronics.ma repo |
+| DigiTronics.ma API | `POST /api/v1/observability/error` `{scope:'app', message, route, locale, userAgent}` ([lib/services/load_report_service.dart](./lib/services/load_report_service.dart)), since 1.0.13 | **NONE** — public, rate-limited per IP; User-Agent `DigitronicsApp/<version> (Android; load-report)` | Page-load failures and recoveries. The site accepts `scope:'app'` from 24/10/2026 and logs it at `warn` (`src/lib/observability/error-report-level.ts` there). An older site answers 200 with `VALIDATION_001` and drops it — harmless |
 | Firebase FCM | topic `all` subscription | google-services.json | |
 
 ## Planned, not built
@@ -45,6 +46,7 @@ optional `PLAY_SERVICE_ACCOUNT_JSON`.
 ## Contract paths (what the fleet audit watches)
 
 `lib/services/notification_service.dart`, `lib/constants/urls.dart`,
+`lib/services/load_report_service.dart`, `lib/services/link_router.dart`,
 `.well-known/assetlinks.json`, `docs/GUIDE.md`.
 
 ## Run & debug

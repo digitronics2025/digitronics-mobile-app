@@ -1,7 +1,7 @@
 name: digitronics
 description: "Digitronics - Official mobile app for digitronics.ma"
 publish_to: 'none'
-version: 1.0.12+12
+version: 1.0.13+13
 
 environment:
   sdk: ^3.8.1
@@ -23,6 +23,8 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # Fake WebView for test/webview_screen_test.dart.
+  webview_flutter_platform_interface: ^2.14.0
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.3
   flutter_native_splash: ^2.4.4

@@ -7,6 +7,8 @@ The Android app already claims these verified hosts in [`android/app/src/main/An
 
 The Play Console warning is caused by the website not serving a valid Digital Asset Links file yet.
 
+Since app 1.0.13 the app opens the tapped page itself (not the home page): Flutter hands the link to [`lib/services/link_router.dart`](../lib/services/link_router.dart), which accepts only `https://digitronics.ma` / `www` pages.
+
 ## File To Deploy
 
 Deploy [`/.well-known/assetlinks.json`](../.well-known/assetlinks.json) to:
