@@ -114,6 +114,19 @@ and [`HANDOFF.md`](HANDOFF.md).
 
 Check runs: repo → **Actions** tab, or `gh run list`.
 
+**Toolchain floor (24/10/2026).** Both workflows build with the *latest stable*
+Flutter, which on 3.47 requires Gradle ≥ 8.14, Android Gradle Plugin ≥ 8.11.1
+and Kotlin ≥ 2.2.20 — the app was on 8.12 / 8.9.3 / 2.1.0 and no longer built.
+Now: Gradle 8.14.3, AGP 8.11.1, Kotlin 2.2.20, proven by a local
+`flutter build apk --release`. Flutter 3.47 also rewrites any `minSdk` ≤ 23 to
+its own default on every build, so the app now needs **Android 7.0 (API 24)**;
+phones on Android 6 keep the version they have but get no updates.
+
+**Actions billing (24/10/2026):** jobs are not starting — GitHub reports
+"recent account payments have failed or your spending limit needs to be
+increased". Until that is fixed in GitHub → Settings → Billing, neither CI nor
+the release build runs.
+
 ---
 
 ## 7. Play Store listing
