@@ -59,8 +59,13 @@ class FakeWebViewController extends PlatformWebViewController {
   Future<void> clearCache() async => cacheClears++;
   @override
   Future<Object> runJavaScriptReturningResult(String javaScript) async => contentResult;
+  bool hasHistory = false;
+  int backs = 0;
+
   @override
-  Future<bool> canGoBack() async => false;
+  Future<bool> canGoBack() async => hasHistory;
+  @override
+  Future<void> goBack() async => backs++;
 
   /// What Android reports for a main-frame network error.
   void failMainFrame(String url) {
@@ -180,6 +185,27 @@ void main() {
     expect(c.cacheClears, 2);
     expect(c.loads.length, 3);
     c.succeed(url);
+    await settle(tester);
+    expect(find.byType(RetryScreen), findsNothing);
+  });
+
+  testWidgets('Back from the retry screen returns to the previous page', (tester) async {
+    final c = await launch(tester, prefs: {'webview_cache_epoch': kWebViewCacheEpoch});
+    const home = 'https://digitronics.ma/fr';
+    const product = 'https://digitronics.ma/fr/produit/tv';
+    c.succeed(c.loads.single);
+    await settle(tester);
+    c.hasHistory = true;
+    c.failMainFrame(product); // silent recovery
+    await tester.pump(const Duration(milliseconds: 50));
+    c.failMainFrame(product); // retry screen
+    await settle(tester);
+    expect(find.byType(RetryScreen), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(c.backs, 1, reason: 'Back goes to the previous page, not the exit prompt');
+    c.succeed(home);
     await settle(tester);
     expect(find.byType(RetryScreen), findsNothing);
   });

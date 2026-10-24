@@ -233,7 +233,12 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _contentProbe?.cancel();
     _pageEverShown = true;
     if (!mounted) return;
-    setState(() => _loadFailed = false);
+    // A page is on screen and usable (possibly from cache while offline), so
+    // neither the retry nor the offline screen may keep covering it.
+    setState(() {
+      _loadFailed = false;
+      _isOffline = false;
+    });
     _maybeHideSplash();
   }
 
@@ -382,7 +387,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        if (!_isOffline && !_loadFailed && await _controller.canGoBack()) {
+        // Back always tries the WebView history first, also from the retry or
+        // offline screen: the previous page is usually still usable, and its
+        // successful load clears the overlay (_markPageShown).
+        if (await _controller.canGoBack()) {
           await _controller.goBack();
           return;
         }
