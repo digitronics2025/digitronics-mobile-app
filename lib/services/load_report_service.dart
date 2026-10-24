@@ -7,6 +7,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_info.dart';
 import '../constants/urls.dart';
 
+/// Posts one report; true when the site accepted it.
+typedef ReportSender = Future<bool> Function(Map<String, dynamic> payload);
+
 /// Reports pages the app could not show to the site's existing client-error
 /// endpoint (`POST /api/v1/observability/error`, `scope: 'app'`), so a phone
 /// stuck on a blank screen leaves evidence in `system_logs` instead of none.
@@ -52,16 +55,30 @@ class LoadReportService {
   }
 
   /// Send the report kept from an earlier failure, now that a page loaded.
-  static Future<void> flushPending() async {
+  /// It is removed only once the site accepted it, so a page that loads while
+  /// the endpoint is still unreachable keeps it for the next try.
+  static Future<void> flushPending({ReportSender? send}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_pendingKey);
       if (raw == null) return;
-      await prefs.remove(_pendingKey);
-      final payload = jsonDecode(raw);
-      if (payload is Map<String, dynamic>) await _post(payload);
+      final payload = _decode(raw);
+      if (payload == null) {
+        await prefs.remove(_pendingKey); // Corrupt: never sendable.
+        return;
+      }
+      if (await (send ?? _post)(payload)) await prefs.remove(_pendingKey);
     } catch (_) {
-      // A corrupt or unsendable pending report is dropped.
+      // Kept for the next page that loads.
+    }
+  }
+
+  static Map<String, dynamic>? _decode(String raw) {
+    try {
+      final payload = jsonDecode(raw);
+      return payload is Map<String, dynamic> ? payload : null;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -72,7 +89,10 @@ class LoadReportService {
           .postUrl(Uri.parse(AppUrls.errorReportEndpoint))
           .timeout(_timeout);
       request.headers.contentType = ContentType.json;
-      request.headers.set(HttpHeaders.userAgentHeader, appUserAgent('load-report'));
+      request.headers.set(
+        HttpHeaders.userAgentHeader,
+        appUserAgent('load-report'),
+      );
       request.add(utf8.encode(jsonEncode(payload)));
       final response = await request.close().timeout(_timeout);
       await response.drain<void>().timeout(_timeout);

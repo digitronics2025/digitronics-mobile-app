@@ -11,8 +11,21 @@ void main() {
   });
 
   test('an App Link route becomes the same page on this site', () {
-    expect(LinkRouterDelegate.routeToUrl(Uri.parse('/fr/produit/tv-50?ref=share')),
-        'https://digitronics.ma/fr/produit/tv-50?ref=share');
+    expect(
+      LinkRouterDelegate.routeToUrl(Uri.parse('/fr/produit/tv-50?ref=share')),
+      'https://digitronics.ma/fr/produit/tv-50?ref=share',
+    );
+  });
+
+  test('a #section in the link is kept, even on the home page', () {
+    expect(
+      LinkRouterDelegate.routeToUrl(Uri.parse('/fr/produit/tv#reviews')),
+      'https://digitronics.ma/fr/produit/tv#reviews',
+    );
+    expect(
+      LinkRouterDelegate.routeToUrl(Uri.parse('/#promos')),
+      'https://digitronics.ma/#promos',
+    );
   });
 
   test('setNewRoutePath queues the page for WebViewScreen', () async {

@@ -43,12 +43,17 @@ class LinkRouterDelegate extends RouterDelegate<Uri>
   @override
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-  /// `/` (a plain launch) is not a link; any other path is.
+  /// `/` (a plain launch) is not a link; any other path, query or `#section`
+  /// is, and all three are kept so the tapped section opens.
   static String? routeToUrl(Uri route) {
     final path = route.path.isEmpty ? '/' : route.path;
-    if (path == '/' && !route.hasQuery) return null;
+    if (path == '/' && !route.hasQuery && !route.hasFragment) return null;
     return AppUrls.inAppUrl(
-      Uri(path: path, query: route.hasQuery ? route.query : null).toString(),
+      Uri(
+        path: path,
+        query: route.hasQuery ? route.query : null,
+        fragment: route.hasFragment ? route.fragment : null,
+      ).toString(),
     );
   }
 
