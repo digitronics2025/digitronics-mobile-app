@@ -12,6 +12,7 @@ import '../l10n/app_strings.dart';
 import '../services/external_link_service.dart';
 import '../services/link_router.dart';
 import '../services/load_report_service.dart';
+import '../services/navigation_tracker.dart';
 import '../services/page_load_policy.dart';
 import '../services/review_service.dart';
 import 'retry_screen.dart';
@@ -58,17 +59,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
   Timer? _minSplashTimer;
   Timer? _splashFallbackTimer;
 
-  // Load tracking. Each load the app starts and each main-frame start is one
-  // navigation; a failure is pinned to its navigation so that navigation's
-  // late onPageFinished (Android still "finishes" its own error page) can
-  // never count as success. Until the WebView reports the new page started,
-  // a finish belongs to the previous navigation and is ignored.
-  String _targetUrl = AppUrls.homeFor(AppUrls.defaultLocale);
-  String _currentNavUrl = '';
-  String _requestedNavUrl = '';
-  bool _awaitingStart = false;
-  int _navId = 0;
-  int _failedNavId = -1;
+  // Which navigation each WebView callback belongs to (see NavigationTracker:
+  // Android's callback order varies, so this is kept out of the widget).
+  final NavigationTracker _nav =
+      NavigationTracker(AppUrls.homeFor(AppUrls.defaultLocale));
   int _consecutiveFailures = 0;
   bool _autoRecoveryUsed = false;
   Timer? _loadWatchdog;
@@ -147,7 +141,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     }
 
     _started = true;
-    _targetUrl = PendingLink.take() ?? AppUrls.homeFor(_locale);
+    final firstPage = PendingLink.take() ?? AppUrls.homeFor(_locale);
     if (!mounted) return;
     setState(() {});
 
@@ -157,9 +151,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
         _isOffline = true;
         _showSplash = false;
       });
+      _nav.request(firstPage); // What _onConnectivityChanged will load.
       return; // _onConnectivityChanged loads the page once a network appears.
     }
-    _load(_targetUrl);
+    _load(firstPage);
   }
 
   Future<bool> _connectivityIsNone() async {
@@ -172,20 +167,18 @@ class _WebViewScreenState extends State<WebViewScreen> {
   }
 
   void _load(String url) {
-    _navId++;
-    _awaitingStart = true;
-    _targetUrl = url;
-    _requestedNavUrl = PageLoadPolicy.stripQuery(url);
+    _nav.request(url);
     _armWatchdog();
     _controller.loadRequest(Uri.parse(url));
   }
 
   NavigationDecision _onNavigationRequest(NavigationRequest request) {
     final decision = ExternalLinkService.handleNavigation(request);
-    // A link the page itself follows: remember it, because Android can report
-    // that page's HTTP error before it reports the page started.
+    // A link the page itself follows opens a navigation now, because Android
+    // can report its error before it reports the page started.
     if (decision == NavigationDecision.navigate && request.isMainFrame) {
-      _requestedNavUrl = PageLoadPolicy.stripQuery(request.url);
+      _nav.request(request.url);
+      _armWatchdog();
     }
     return decision;
   }
@@ -196,18 +189,12 @@ class _WebViewScreenState extends State<WebViewScreen> {
   }
 
   void _onPageStarted(String url) {
-    if (!_awaitingStart) _navId++; // A navigation the page started itself.
-    _awaitingStart = false;
-    _currentNavUrl = PageLoadPolicy.stripQuery(url);
-    // A retry reloads the page that was being opened.
-    if (url.startsWith('https://')) _targetUrl = url;
+    _nav.started(url);
     _armWatchdog();
   }
 
   void _onPageFinished(String url) {
-    // Android "finished" its own error page, or the previous navigation is
-    // finishing after the app already started a new load.
-    if (_failedNavId == _navId || _awaitingStart) return;
+    if (!_nav.finishedSuccessfully()) return;
     _loadWatchdog?.cancel();
     _markPageShown();
 
@@ -252,7 +239,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _fail(LoadFailure(
       LoadFailureKind.network,
       '${error.errorCode} ${error.errorType?.name ?? ''} ${error.description}'.trim(),
-      error.url ?? _targetUrl,
+      error.url ?? _nav.target,
     ));
   }
 
@@ -261,8 +248,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     final url = error.request?.uri.toString();
     if (status == null || url == null) return;
     // Sub-resources report HTTP errors too; only the page itself counts.
-    final page = PageLoadPolicy.stripQuery(url);
-    if (page != _currentNavUrl && page != _requestedNavUrl) return;
+    if (!_nav.isCurrentPage(url)) return;
     if (!PageLoadPolicy.isFatalHttpStatus(status)) return;
     _fail(LoadFailure(LoadFailureKind.http, 'status $status', url));
   }
@@ -276,7 +262,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _fail(LoadFailure(
       LoadFailureKind.timeout,
       'no content after ${PageLoadPolicy.loadTimeout.inSeconds}s (progress ${(_progress * 100).round()}%)',
-      _targetUrl,
+      _nav.target,
     ));
   }
 
@@ -305,8 +291,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   }
 
   void _fail(LoadFailure failure) {
-    if (_failedNavId == _navId) return; // One failure per navigation.
-    _failedNavId = _navId;
+    if (!_nav.recordFailure()) return; // One failure per navigation.
     _loadWatchdog?.cancel();
     _contentProbe?.cancel();
     _consecutiveFailures++;
@@ -339,7 +324,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
       // Reload anyway.
     }
     if (!mounted) return;
-    _load(_targetUrl);
+    _load(_nav.target); // The page that failed, not the one before it.
   }
 
   Future<void> _retry() async {

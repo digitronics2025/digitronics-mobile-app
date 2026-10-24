@@ -210,6 +210,28 @@ void main() {
     expect(find.byType(RetryScreen), findsNothing);
   });
 
+  testWidgets('a link that fails before it starts is retried, not the page before it',
+      (tester) async {
+    final c = await launch(tester, prefs: {'webview_cache_epoch': kWebViewCacheEpoch});
+    const product = 'https://digitronics.ma/fr/produit/tv';
+    c.succeed(c.loads.single);
+    await settle(tester);
+
+    // The shopper taps a product; Android reports its 503 before onPageStarted.
+    await c.delegate!.onNavigationRequest!(
+        const NavigationRequest(url: product, isMainFrame: true));
+    c.delegate!.onHttpError?.call(HttpResponseError(
+      request: WebResourceRequest(uri: Uri.parse(product)),
+      response: const WebResourceResponse(uri: null, statusCode: 503),
+    ));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(c.cacheClears, 1);
+    expect(c.loads.last, product);
+    c.succeed(product);
+    await settle(tester);
+    expect(find.byType(RetryScreen), findsNothing);
+  });
+
   testWidgets('a page that never arrives ends on the retry screen, not white',
       (tester) async {
     final c = await launch(tester, prefs: {'webview_cache_epoch': kWebViewCacheEpoch});
