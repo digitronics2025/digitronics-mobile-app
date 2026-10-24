@@ -41,16 +41,21 @@ class NavigationTracker {
     if (url.startsWith('https://')) _target = url;
   }
 
-  /// `onPageFinished`: true only when it completes the current navigation
-  /// without a recorded failure. Android still "finishes" its own error page,
-  /// and the previous page may finish after a new request.
-  bool finishedSuccessfully() => !_awaitingStart && _failedId != _id;
+  /// `onPageFinished` for [url]: true only when it completes the current
+  /// navigation without a recorded failure. Android still "finishes" its own
+  /// error page, and the previous page may finish after a new request or even
+  /// after the new page started — so the URL must be the started page's.
+  bool finishedSuccessfully(String url) =>
+      !_awaitingStart &&
+      _failedId != _id &&
+      PageLoadPolicy.stripQuery(url) == _startedPage;
 
-  /// Whether a resource error for [url] concerns the page being opened rather
-  /// than an image or script inside it.
+  /// Whether a resource error for [url] concerns the page being opened — not
+  /// an image or script inside it, nor the page being left. Until the new page
+  /// starts only the requested page counts; after that only the started one.
   bool isCurrentPage(String url) {
     final page = PageLoadPolicy.stripQuery(url);
-    return page == _startedPage || page == _requestedPage;
+    return page == (_awaitingStart ? _requestedPage : _startedPage);
   }
 
   /// Record that the current navigation failed. False when it was already

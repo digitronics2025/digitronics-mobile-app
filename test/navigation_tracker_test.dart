@@ -4,24 +4,24 @@ import 'package:digitronics/services/navigation_tracker.dart';
 void main() {
   const home = 'https://digitronics.ma/fr';
   const product = 'https://digitronics.ma/fr/produit/tv?utm_source=fb';
+  const productPage = 'https://digitronics.ma/fr/produit/tv';
 
-  test('a normal load: request, start, finish succeeds once', () {
+  test('a normal load: request, start, finish succeeds', () {
     final nav = NavigationTracker(home)..request(home);
-    expect(nav.finishedSuccessfully(), isFalse, reason: 'not started yet');
+    expect(nav.finishedSuccessfully(home), isFalse, reason: 'not started yet');
     nav.started(home);
-    expect(nav.finishedSuccessfully(), isTrue);
+    expect(nav.finishedSuccessfully(home), isTrue);
   });
 
   test('an error before onPageStarted is pinned to the page being opened', () {
     final nav = NavigationTracker(home)
       ..request(home)
       ..started(home);
-    expect(nav.finishedSuccessfully(), isTrue);
 
     // The page follows a link; Android reports its 503 before it "starts".
     nav.request(product);
     expect(
-      nav.isCurrentPage('https://digitronics.ma/fr/produit/tv'),
+      nav.isCurrentPage(productPage),
       isTrue,
       reason: 'matched without the tracking query',
     );
@@ -35,17 +35,29 @@ void main() {
 
     // The failed navigation's own late finish is not a success.
     nav.started(product);
-    expect(nav.finishedSuccessfully(), isFalse);
+    expect(nav.finishedSuccessfully(product), isFalse);
   });
 
-  test('the previous page finishing after a new request is not a success', () {
+  test('a late error for the page being left never fails the new page', () {
     final nav = NavigationTracker(home)
       ..request(home)
       ..started(home)
       ..request(product);
-    expect(nav.finishedSuccessfully(), isFalse);
+    expect(nav.isCurrentPage(home), isFalse, reason: 'before the new start');
     nav.started(product);
-    expect(nav.finishedSuccessfully(), isTrue);
+    expect(nav.isCurrentPage(home), isFalse, reason: 'after the new start');
+    expect(nav.isCurrentPage(productPage), isTrue);
+  });
+
+  test('the previous page finishing late is never the new page succeeding', () {
+    final nav = NavigationTracker(home)
+      ..request(home)
+      ..started(home)
+      ..request(product);
+    expect(nav.finishedSuccessfully(home), isFalse, reason: 'before the start');
+    nav.started(product);
+    expect(nav.finishedSuccessfully(home), isFalse, reason: 'after the start');
+    expect(nav.finishedSuccessfully(product), isTrue);
   });
 
   test('a retry after a failure opens a fresh navigation that can succeed', () {
@@ -56,7 +68,7 @@ void main() {
     nav
       ..request(nav.target)
       ..started(product);
-    expect(nav.finishedSuccessfully(), isTrue);
+    expect(nav.finishedSuccessfully(product), isTrue);
   });
 
   test(
@@ -67,7 +79,7 @@ void main() {
         ..started(product);
       expect(nav.recordFailure(), isTrue);
       nav.started(home); // Back
-      expect(nav.finishedSuccessfully(), isTrue);
+      expect(nav.finishedSuccessfully(home), isTrue);
       expect(nav.target, home);
     },
   );

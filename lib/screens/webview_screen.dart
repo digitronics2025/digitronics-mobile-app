@@ -194,7 +194,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   }
 
   void _onPageFinished(String url) {
-    if (!_nav.finishedSuccessfully()) return;
+    if (!_nav.finishedSuccessfully(url)) return;
     _loadWatchdog?.cancel();
     _markPageShown();
 
