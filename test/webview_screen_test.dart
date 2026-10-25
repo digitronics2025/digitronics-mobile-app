@@ -696,6 +696,54 @@ void main() {
     expect(find.byType(LoadingScreen), findsNothing);
   });
 
+  testWidgets(
+    'an online event during Retry wins over an older offline snapshot',
+    (tester) async {
+      final events = StreamController<List<String>>.broadcast();
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockStreamHandler(
+        _connectivityEvents,
+        MockStreamHandler.inline(
+          onListen: (_, sink) {
+            events.stream.listen(sink.success);
+          },
+        ),
+      );
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch, 'last_locale': 'fr'},
+      );
+      c.succeed(c.loads.single);
+      await settle(tester);
+      events.add(['none']);
+      await tester.pump(const Duration(milliseconds: 50));
+      final gate = Completer<List<String>>();
+      messenger.setMockMethodCallHandler(
+        _connectivityMethod,
+        (call) => gate.future,
+      );
+      await tester.tap(find.text('Réessayer')); // Retry on the offline screen
+      await tester.pump(const Duration(milliseconds: 50));
+      events.add(['wifi']); // the network returns mid-check
+      await tester.pump(const Duration(milliseconds: 50));
+      gate.complete(['none']); // the snapshot is older
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('Pas de connexion Internet'), findsNothing);
+      PendingLink.offer('/fr/produit/tv-50');
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(
+        c.loads.last,
+        'https://digitronics.ma/fr/produit/tv-50',
+        reason: 'online: links load instead of queueing',
+      );
+      c.contentUrl = c.loads.last;
+      c.succeed(c.loads.last);
+      await settle(tester);
+      await events.close();
+    },
+  );
+
   testWidgets('a slow page that already shows content is never replaced', (
     tester,
   ) async {

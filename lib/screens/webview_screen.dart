@@ -84,6 +84,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   /// The latest connectivity event received before startup finished, if any.
   bool? _startupConnectivityOffline;
+
+  /// Counts connectivity events, so an async snapshot can tell that a newer
+  /// event arrived while it was taken (see _retry).
+  int _connectivityEventCount = 0;
   bool _autoRecoveryUsed = false;
   Timer? _loadWatchdog;
   Timer? _blankCheck;
@@ -426,7 +430,14 @@ class _WebViewScreenState extends State<WebViewScreen> {
   }
 
   Future<void> _retry() async {
-    if (await _connectivityIsNone()) {
+    final eventsBefore = _connectivityEventCount;
+    final snapshotOffline = await _connectivityIsNone();
+    // An event delivered while the snapshot was taken is at least as new and
+    // has already updated _isOffline; its transition will not come again.
+    final offline = eventsBefore != _connectivityEventCount
+        ? _isOffline
+        : snapshotOffline;
+    if (offline) {
       if (mounted) {
         setState(() {
           _isOffline = true;
@@ -446,6 +457,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   }
 
   void _onConnectivityChanged(List<ConnectivityResult> result) {
+    _connectivityEventCount++;
     final offline = result.contains(ConnectivityResult.none);
     if (!_started) {
       _startupConnectivityOffline = offline; // _start() applies the latest.
