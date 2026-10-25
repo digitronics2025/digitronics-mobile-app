@@ -235,7 +235,13 @@ class _WebViewScreenState extends State<WebViewScreen> {
     // deadline.
     if (!_nav.started(url)) return;
     _armWatchdog();
-    if (_pageEverShown) _scheduleBlankCheck();
+    if (_needsContentCover || _loadFailed) {
+      // Something covers the WebView (the first load, a blank page, a failure
+      // screen): show this page as soon as it paints, finish or not.
+      _startContentProbe();
+    } else if (_pageEverShown) {
+      _scheduleBlankCheck();
+    }
   }
 
   /// A later page that commits blank and then hangs before its finish would
@@ -398,7 +404,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _contentProbe = Timer.periodic(const Duration(milliseconds: 1500), (
       _,
     ) async {
-      if (!_needsContentCover || _loadFailed) {
+      // Nothing left to uncover, or the page being loaded already failed (a
+      // newer navigation, e.g. Back from the failure screen, is probed again).
+      if (!(_needsContentCover || _loadFailed) || _nav.currentFailed) {
         _contentProbe?.cancel();
         return;
       }

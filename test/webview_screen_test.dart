@@ -1075,6 +1075,32 @@ void main() {
     expect(find.byType(RetryScreen), findsNothing);
   });
 
+  testWidgets('a page reached by Back from the failure screen shows at once', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+    );
+    const home = 'https://digitronics.ma/fr';
+    const product = 'https://digitronics.ma/fr/produit/tv';
+    c.succeed(c.loads.single);
+    await settle(tester);
+    c.hasHistory = true;
+    c.failMainFrame(product); // silent recovery
+    await tester.pump(const Duration(milliseconds: 50));
+    c.failMainFrame(product); // retry screen
+    await settle(tester);
+    expect(find.byType(RetryScreen), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    c.contentUrl = home;
+    c.delegate!.onPageStarted!(home); // paints, never reports a finish
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.byType(RetryScreen), findsNothing);
+    await settle(tester);
+  });
+
   testWidgets('a bare-domain App Link opens home in the shopper\'s language', (
     tester,
   ) async {

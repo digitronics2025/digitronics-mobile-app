@@ -47,6 +47,9 @@ class NavigationTracker {
   /// showing the previous page.
   bool get awaitingStart => _awaitingStart;
 
+  /// Whether the current navigation has a recorded failure.
+  bool get currentFailed => _failedId == _id;
+
   /// A main-frame load of [url] was asked for, by the app (`loadRequest`) or
   /// by the page (a link, a redirect).
   void request(String url) {
