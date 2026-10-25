@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,16 +25,19 @@ class FakeNavigationDelegate extends PlatformNavigationDelegate {
   NavigationRequestCallback? onNavigationRequest;
 
   @override
-  Future<void> setOnPageStarted(PageEventCallback cb) async => onPageStarted = cb;
+  Future<void> setOnPageStarted(PageEventCallback cb) async =>
+      onPageStarted = cb;
   @override
-  Future<void> setOnPageFinished(PageEventCallback cb) async => onPageFinished = cb;
+  Future<void> setOnPageFinished(PageEventCallback cb) async =>
+      onPageFinished = cb;
   @override
   Future<void> setOnProgress(ProgressCallback cb) async {}
   @override
   Future<void> setOnWebResourceError(WebResourceErrorCallback cb) async =>
       onWebResourceError = cb;
   @override
-  Future<void> setOnHttpError(HttpResponseErrorCallback cb) async => onHttpError = cb;
+  Future<void> setOnHttpError(HttpResponseErrorCallback cb) async =>
+      onHttpError = cb;
   @override
   Future<void> setOnNavigationRequest(NavigationRequestCallback cb) async =>
       onNavigationRequest = cb;
@@ -46,19 +51,26 @@ class FakeWebViewController extends PlatformWebViewController {
   FakeNavigationDelegate? delegate;
   final List<String> loads = <String>[];
   int cacheClears = 0;
-  Object contentResult = 0;
+
+  /// What the "is anything on screen?" check answers; real shop pages have
+  /// text. Set [pendingContent] to hold the answer back.
+  Object contentResult = 1;
+  Completer<Object>? pendingContent;
 
   @override
   Future<void> setJavaScriptMode(JavaScriptMode mode) async {}
   @override
-  Future<void> setPlatformNavigationDelegate(PlatformNavigationDelegate handler) async =>
-      delegate = handler as FakeNavigationDelegate;
+  Future<void> setPlatformNavigationDelegate(
+    PlatformNavigationDelegate handler,
+  ) async => delegate = handler as FakeNavigationDelegate;
   @override
-  Future<void> loadRequest(LoadRequestParams params) async => loads.add(params.uri.toString());
+  Future<void> loadRequest(LoadRequestParams params) async =>
+      loads.add(params.uri.toString());
   @override
   Future<void> clearCache() async => cacheClears++;
   @override
-  Future<Object> runJavaScriptReturningResult(String javaScript) async => contentResult;
+  Future<Object> runJavaScriptReturningResult(String javaScript) =>
+      pendingContent?.future ?? Future<Object>.value(contentResult);
   bool hasHistory = false;
   int backs = 0;
 
@@ -70,13 +82,15 @@ class FakeWebViewController extends PlatformWebViewController {
   /// What Android reports for a main-frame network error.
   void failMainFrame(String url) {
     delegate!.onPageStarted?.call(url);
-    delegate!.onWebResourceError?.call(WebResourceError(
-      errorCode: -2,
-      description: 'net::ERR_NAME_NOT_RESOLVED',
-      errorType: WebResourceErrorType.hostLookup,
-      isForMainFrame: true,
-      url: url,
-    ));
+    delegate!.onWebResourceError?.call(
+      WebResourceError(
+        errorCode: -2,
+        description: 'net::ERR_NAME_NOT_RESOLVED',
+        errorType: WebResourceErrorType.hostLookup,
+        isForMainFrame: true,
+        url: url,
+      ),
+    );
     delegate!.onPageFinished?.call(url); // Android finishes its error page.
   }
 
@@ -97,20 +111,24 @@ class FakeWebViewPlatform extends WebViewPlatform {
 
   @override
   PlatformWebViewController createPlatformWebViewController(
-          PlatformWebViewControllerCreationParams params) =>
-      controller = FakeWebViewController(params);
+    PlatformWebViewControllerCreationParams params,
+  ) => controller = FakeWebViewController(params);
   @override
   PlatformNavigationDelegate createPlatformNavigationDelegate(
-          PlatformNavigationDelegateCreationParams params) =>
-      FakeNavigationDelegate(params);
+    PlatformNavigationDelegateCreationParams params,
+  ) => FakeNavigationDelegate(params);
   @override
   PlatformWebViewWidget createPlatformWebViewWidget(
-          PlatformWebViewWidgetCreationParams params) =>
-      FakeWebViewWidget(params);
+    PlatformWebViewWidgetCreationParams params,
+  ) => FakeWebViewWidget(params);
 }
 
-const _connectivityMethod = MethodChannel('dev.fluttercommunity.plus/connectivity');
-const _connectivityEvents = EventChannel('dev.fluttercommunity.plus/connectivity_status');
+const _connectivityMethod = MethodChannel(
+  'dev.fluttercommunity.plus/connectivity',
+);
+const _connectivityEvents = EventChannel(
+  'dev.fluttercommunity.plus/connectivity_status',
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -121,15 +139,23 @@ void main() {
     platform = FakeWebViewPlatform();
     WebViewPlatform.instance = platform;
     connectivity = ['wifi'];
-    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-    messenger.setMockMethodCallHandler(_connectivityMethod, (call) async => connectivity);
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      _connectivityMethod,
+      (call) async => connectivity,
+    );
     messenger.setMockStreamHandler(
-        _connectivityEvents, MockStreamHandler.inline(onListen: (_, _) {}));
+      _connectivityEvents,
+      MockStreamHandler.inline(onListen: (_, _) {}),
+    );
     PendingLink.url.value = null;
   });
 
-  Future<FakeWebViewController> launch(WidgetTester tester,
-      {Map<String, Object> prefs = const {}}) async {
+  Future<FakeWebViewController> launch(
+    WidgetTester tester, {
+    Map<String, Object> prefs = const {},
+  }) async {
     SharedPreferences.setMockInitialValues(prefs);
     await tester.pumpWidget(const DigitronicsApp());
     await tester.pump(const Duration(milliseconds: 50));
@@ -143,54 +169,74 @@ void main() {
     }
   }
 
-  testWidgets('opens the locale page directly and clears the cache once after the update',
-      (tester) async {
-    final c = await launch(tester, prefs: {'last_locale': 'ar'});
-    expect(c.loads, ['https://digitronics.ma/ar']);
-    expect(c.cacheClears, 1);
-    final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getInt('webview_cache_epoch'), kWebViewCacheEpoch);
-    c.succeed('https://digitronics.ma/ar');
-    await settle(tester);
-    expect(find.byType(RetryScreen), findsNothing);
-  });
+  testWidgets(
+    'opens the locale page directly and clears the cache once after the update',
+    (tester) async {
+      final c = await launch(tester, prefs: {'last_locale': 'ar'});
+      expect(c.loads, ['https://digitronics.ma/ar']);
+      expect(c.cacheClears, 1);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt('webview_cache_epoch'), kWebViewCacheEpoch);
+      c.succeed('https://digitronics.ma/ar');
+      await settle(tester);
+      expect(find.byType(RetryScreen), findsNothing);
+    },
+  );
 
-  testWidgets('does not clear the cache again on later launches', (tester) async {
-    final c = await launch(tester, prefs: {'webview_cache_epoch': kWebViewCacheEpoch});
+  testWidgets('does not clear the cache again on later launches', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+    );
     expect(c.cacheClears, 0);
     c.succeed(c.loads.single);
     await settle(tester);
   });
 
-  testWidgets('first failure clears the cache and retries silently; the second shows retry',
-      (tester) async {
-    final c = await launch(tester,
-        prefs: {'webview_cache_epoch': kWebViewCacheEpoch, 'last_locale': 'fr'});
-    final url = c.loads.single;
+  testWidgets(
+    'first failure clears the cache and retries silently; the second shows retry',
+    (tester) async {
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch, 'last_locale': 'fr'},
+      );
+      final url = c.loads.single;
 
-    c.failMainFrame(url);
-    await tester.pump(const Duration(milliseconds: 50));
-    expect(c.cacheClears, 1, reason: 'automatic recovery clears the HTTP cache');
-    expect(c.loads, [url, url], reason: 'and reloads the same page');
-    expect(find.byType(RetryScreen), findsNothing);
+      c.failMainFrame(url);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(
+        c.cacheClears,
+        1,
+        reason: 'automatic recovery clears the HTTP cache',
+      );
+      expect(c.loads, [url, url], reason: 'and reloads the same page');
+      expect(find.byType(RetryScreen), findsNothing);
 
-    c.failMainFrame(url);
-    await settle(tester);
-    expect(find.byType(RetryScreen), findsOneWidget);
-    expect(find.text('Réessayer'), findsOneWidget);
+      c.failMainFrame(url);
+      await settle(tester);
+      expect(find.byType(RetryScreen), findsOneWidget);
+      expect(find.text('Réessayer'), findsOneWidget);
 
-    // Retry: cache cleared again, page reloaded, retry screen gone on success.
-    await tester.tap(find.text('Réessayer'));
-    await tester.pump(const Duration(milliseconds: 50));
-    expect(c.cacheClears, 2);
-    expect(c.loads.length, 3);
-    c.succeed(url);
-    await settle(tester);
-    expect(find.byType(RetryScreen), findsNothing);
-  });
+      // Retry: cache cleared again, page reloaded, retry screen gone on success.
+      await tester.tap(find.text('Réessayer'));
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(c.cacheClears, 2);
+      expect(c.loads.length, 3);
+      c.succeed(url);
+      await settle(tester);
+      expect(find.byType(RetryScreen), findsNothing);
+    },
+  );
 
-  testWidgets('Back from the retry screen returns to the previous page', (tester) async {
-    final c = await launch(tester, prefs: {'webview_cache_epoch': kWebViewCacheEpoch});
+  testWidgets('Back from the retry screen returns to the previous page', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+    );
     const home = 'https://digitronics.ma/fr';
     const product = 'https://digitronics.ma/fr/produit/tv';
     c.succeed(c.loads.single);
@@ -204,48 +250,159 @@ void main() {
 
     await tester.binding.handlePopRoute();
     await tester.pump();
-    expect(c.backs, 1, reason: 'Back goes to the previous page, not the exit prompt');
+    expect(
+      c.backs,
+      1,
+      reason: 'Back goes to the previous page, not the exit prompt',
+    );
     c.succeed(home);
     await settle(tester);
     expect(find.byType(RetryScreen), findsNothing);
   });
 
-  testWidgets('a link that fails before it starts is retried, not the page before it',
-      (tester) async {
-    final c = await launch(tester, prefs: {'webview_cache_epoch': kWebViewCacheEpoch});
-    const product = 'https://digitronics.ma/fr/produit/tv';
-    c.succeed(c.loads.single);
-    await settle(tester);
+  testWidgets(
+    'a link that fails before it starts is retried, not the page before it',
+    (tester) async {
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+      );
+      const product = 'https://digitronics.ma/fr/produit/tv';
+      c.succeed(c.loads.single);
+      await settle(tester);
 
-    // The shopper taps a product; Android reports its 503 before onPageStarted.
-    await c.delegate!.onNavigationRequest!(
-        const NavigationRequest(url: product, isMainFrame: true));
-    c.delegate!.onHttpError?.call(HttpResponseError(
-      request: WebResourceRequest(uri: Uri.parse(product)),
-      response: const WebResourceResponse(uri: null, statusCode: 503),
-    ));
-    await tester.pump(const Duration(milliseconds: 50));
-    expect(c.cacheClears, 1);
-    expect(c.loads.last, product);
-    c.succeed(product);
-    await settle(tester);
-    expect(find.byType(RetryScreen), findsNothing);
-  });
+      // The shopper taps a product; Android reports its 503 before onPageStarted.
+      await c.delegate!.onNavigationRequest!(
+        const NavigationRequest(url: product, isMainFrame: true),
+      );
+      c.delegate!.onHttpError?.call(
+        HttpResponseError(
+          request: WebResourceRequest(uri: Uri.parse(product)),
+          response: const WebResourceResponse(uri: null, statusCode: 503),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(c.cacheClears, 1);
+      expect(c.loads.last, product);
+      c.succeed(product);
+      await settle(tester);
+      expect(find.byType(RetryScreen), findsNothing);
+    },
+  );
 
-  testWidgets('a page that never arrives ends on the retry screen, not white',
-      (tester) async {
-    final c = await launch(tester, prefs: {'webview_cache_epoch': kWebViewCacheEpoch});
+  testWidgets('a page that never arrives ends on the retry screen, not white', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+    );
+    c.contentResult = 0;
     c.delegate!.onPageStarted?.call(c.loads.single);
     // Nothing else ever happens (the screenshot: stuck at 10 %).
-    await tester.pump(const Duration(seconds: 21)); // watchdog → silent recovery
+    await tester.pump(
+      const Duration(seconds: 21),
+    ); // watchdog → silent recovery
     expect(c.cacheClears, 1);
-    await tester.pump(const Duration(seconds: 21)); // second timeout → retry screen
+    await tester.pump(
+      const Duration(seconds: 21),
+    ); // second timeout → retry screen
     await settle(tester);
     expect(find.byType(RetryScreen), findsOneWidget);
   });
 
-  testWidgets('a slow page that already shows content is never replaced', (tester) async {
-    final c = await launch(tester, prefs: {'webview_cache_epoch': kWebViewCacheEpoch});
+  testWidgets(
+    'a page that finishes with nothing on it is not taken as loaded',
+    (tester) async {
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+      );
+      c.contentResult = 0; // An empty 200, or a shell whose scripts died.
+      c.succeed(c.loads.single);
+      await tester.pump(const Duration(seconds: 1));
+      expect(
+        find.byType(LoadingScreen),
+        findsOneWidget,
+        reason: 'not revealed as white',
+      );
+      await tester.pump(
+        const Duration(seconds: 21),
+      ); // watchdog → silent recovery
+      expect(c.cacheClears, 1);
+      c.contentResult = 1;
+      c.succeed(c.loads.last);
+      await settle(tester);
+      expect(find.byType(LoadingScreen), findsNothing);
+    },
+  );
+
+  testWidgets('a late network error for the page being left is ignored', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+    );
+    final home = c.loads.single;
+    c.succeed(home);
+    await settle(tester);
+    await c.delegate!.onNavigationRequest!(
+      const NavigationRequest(
+        url: 'https://digitronics.ma/fr/promotions',
+        isMainFrame: true,
+      ),
+    );
+    c.delegate!.onWebResourceError?.call(
+      WebResourceError(
+        errorCode: -2,
+        description: 'net::ERR_NAME_NOT_RESOLVED',
+        errorType: WebResourceErrorType.hostLookup,
+        isForMainFrame: true,
+        url: home,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(c.cacheClears, 0);
+    c.succeed('https://digitronics.ma/fr/promotions');
+    await settle(tester);
+  });
+
+  testWidgets(
+    'a content check still running when a new page opens cannot fail it',
+    (tester) async {
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+      );
+      c.delegate!.onPageStarted?.call(c.loads.single);
+      c.pendingContent = Completer<Object>();
+      await tester.pump(
+        const Duration(seconds: 21),
+      ); // watchdog check now in flight
+      // The shopper opens another page while the old check is still running.
+      await c.delegate!.onNavigationRequest!(
+        const NavigationRequest(
+          url: 'https://digitronics.ma/fr/promotions',
+          isMainFrame: true,
+        ),
+      );
+      c.pendingContent!.complete(0);
+      c.pendingContent = null;
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(c.cacheClears, 0, reason: "the old check's answer is dropped");
+      c.succeed('https://digitronics.ma/fr/promotions');
+      await settle(tester);
+    },
+  );
+
+  testWidgets('a slow page that already shows content is never replaced', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+    );
     c.contentResult = 1;
     c.delegate!.onPageStarted?.call(c.loads.single);
     await tester.pump(const Duration(seconds: 21));
@@ -255,47 +412,70 @@ void main() {
     expect(find.byType(LoadingScreen), findsNothing);
   });
 
-  testWidgets('an empty 403 or a 5xx on the page fails; on an image it does not',
-      (tester) async {
-    final c = await launch(tester, prefs: {'webview_cache_epoch': kWebViewCacheEpoch});
-    final url = c.loads.single;
-    c.delegate!.onPageStarted?.call(url);
-    c.delegate!.onHttpError?.call(HttpResponseError(
-      request: WebResourceRequest(uri: Uri.parse('https://digitronics.ma/r2/x.webp')),
-      response: const WebResourceResponse(uri: null, statusCode: 503),
-    ));
-    expect(c.cacheClears, 0, reason: 'a sub-resource error is not a page failure');
-    c.delegate!.onHttpError?.call(HttpResponseError(
-      request: WebResourceRequest(uri: Uri.parse(url)),
-      response: const WebResourceResponse(uri: null, statusCode: 403),
-    ));
-    c.delegate!.onPageFinished?.call(url);
-    await tester.pump(const Duration(milliseconds: 50));
-    expect(c.cacheClears, 1);
-    expect(c.loads.length, 2);
-    c.succeed(url);
-    await settle(tester);
-  });
+  testWidgets(
+    'an empty 403 or a 5xx on the page fails; on an image it does not',
+    (tester) async {
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+      );
+      final url = c.loads.single;
+      c.delegate!.onPageStarted?.call(url);
+      c.delegate!.onHttpError?.call(
+        HttpResponseError(
+          request: WebResourceRequest(
+            uri: Uri.parse('https://digitronics.ma/r2/x.webp'),
+          ),
+          response: const WebResourceResponse(uri: null, statusCode: 503),
+        ),
+      );
+      expect(
+        c.cacheClears,
+        0,
+        reason: 'a sub-resource error is not a page failure',
+      );
+      c.delegate!.onHttpError?.call(
+        HttpResponseError(
+          request: WebResourceRequest(uri: Uri.parse(url)),
+          response: const WebResourceResponse(uri: null, statusCode: 403),
+        ),
+      );
+      c.delegate!.onPageFinished?.call(url);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(c.cacheClears, 1);
+      expect(c.loads.length, 2);
+      c.succeed(url);
+      await settle(tester);
+    },
+  );
 
-  testWidgets('offline at launch shows the offline screen instead of loading',
-      (tester) async {
+  testWidgets('offline at launch shows the offline screen instead of loading', (
+    tester,
+  ) async {
     connectivity = ['none'];
-    final c = await launch(tester,
-        prefs: {'webview_cache_epoch': kWebViewCacheEpoch, 'last_locale': 'fr'});
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch, 'last_locale': 'fr'},
+    );
     await settle(tester);
     expect(c.loads, isEmpty);
     expect(find.text('Pas de connexion Internet'), findsOneWidget);
   });
 
-  testWidgets('a notification or App Link opens that page; foreign links are ignored',
-      (tester) async {
-    final c = await launch(tester, prefs: {'webview_cache_epoch': kWebViewCacheEpoch});
-    c.succeed(c.loads.single);
-    PendingLink.offer('https://evil.example/fr');
-    PendingLink.offer('/fr/produit/tv-50');
-    await tester.pump(const Duration(milliseconds: 50));
-    expect(c.loads.last, 'https://digitronics.ma/fr/produit/tv-50');
-    expect(c.loads.length, 2);
-    await settle(tester);
-  });
+  testWidgets(
+    'a notification or App Link opens that page; foreign links are ignored',
+    (tester) async {
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+      );
+      c.succeed(c.loads.single);
+      PendingLink.offer('https://evil.example/fr');
+      PendingLink.offer('/fr/produit/tv-50');
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(c.loads.last, 'https://digitronics.ma/fr/produit/tv-50');
+      expect(c.loads.length, 2);
+      await settle(tester);
+    },
+  );
 }

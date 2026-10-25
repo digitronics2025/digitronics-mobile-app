@@ -84,6 +84,39 @@ void main() {
     },
   );
 
+  test('pages that differ only by a meaningful query are different pages', () {
+    final nav = NavigationTracker(home)
+      ..request('https://digitronics.ma/fr/recherche?q=tv')
+      ..started('https://digitronics.ma/fr/recherche?q=tv')
+      ..request('https://digitronics.ma/fr/recherche?q=frigo')
+      ..started('https://digitronics.ma/fr/recherche?q=frigo');
+    expect(
+      nav.finishedSuccessfully('https://digitronics.ma/fr/recherche?q=tv'),
+      isFalse,
+    );
+    expect(
+      nav.isCurrentPage('https://digitronics.ma/fr/recherche?q=tv'),
+      isFalse,
+    );
+    expect(
+      nav.finishedSuccessfully('https://digitronics.ma/fr/recherche?q=frigo'),
+      isTrue,
+    );
+  });
+
+  test('generation changes with every new navigation', () {
+    final nav = NavigationTracker(home)..request(home);
+    final first = nav.generation;
+    nav.started(home);
+    expect(
+      nav.generation,
+      first,
+      reason: 'the start of a requested load is the same one',
+    );
+    nav.request(product);
+    expect(nav.generation, isNot(first));
+  });
+
   test('images and scripts are not the page', () {
     final nav = NavigationTracker(home)
       ..request(home)
@@ -92,6 +125,6 @@ void main() {
       nav.isCurrentPage('https://digitronics.ma/r2/products/x.webp'),
       isFalse,
     );
-    expect(nav.isCurrentPage('https://digitronics.ma/fr?x=1'), isTrue);
+    expect(nav.isCurrentPage('https://digitronics.ma/fr?utm_source=fb'), isTrue);
   });
 }

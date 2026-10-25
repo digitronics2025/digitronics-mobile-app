@@ -59,8 +59,43 @@ class PageLoadPolicy {
   static bool isFatalHttpStatus(int status) =>
       status == 403 || status == 429 || status >= 500;
 
-  /// Path-only form of a URL for comparing main-frame requests and for logs:
-  /// no query (UTM tags, click ids) and no fragment.
+  /// Query parameters that only track a visit and never change the page.
+  static const Set<String> _trackingParams = {
+    'fbclid',
+    'gclid',
+    'gbraid',
+    'wbraid',
+    'ttclid',
+    'msclkid',
+    'igshid',
+    'mc_cid',
+    'mc_eid',
+    '_gl',
+  };
+
+  /// Identity of a page for matching WebView callbacks: the URL without its
+  /// fragment and tracking parameters (`utm_*`, click ids). The rest of the
+  /// query stays, because it selects the document (`/recherche?q=tv` and
+  /// `/recherche?q=frigo` are different pages).
+  static String navigationKey(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasScheme) return url;
+    final kept = uri.queryParametersAll.entries
+        .where(
+          (e) => !e.key.startsWith('utm_') && !_trackingParams.contains(e.key),
+        )
+        .toList();
+    return Uri(
+      scheme: uri.scheme,
+      host: uri.host,
+      port: uri.hasPort ? uri.port : null,
+      path: uri.path,
+      queryParameters: kept.isEmpty ? null : Map.fromEntries(kept),
+    ).toString();
+  }
+
+  /// Path-only form of a URL for logs: no query (search words, UTM tags,
+  /// click ids) and no fragment, so a report never carries personal text.
   static String stripQuery(String url) {
     final uri = Uri.tryParse(url);
     if (uri == null || !uri.hasScheme) return url;

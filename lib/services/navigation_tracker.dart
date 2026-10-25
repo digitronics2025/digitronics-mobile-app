@@ -23,13 +23,17 @@ class NavigationTracker {
   /// The page a retry should load: the latest one asked for.
   String get target => _target;
 
+  /// Changes whenever a new navigation opens. An async check (a content
+  /// probe) captures it first and drops its result if it changed meanwhile.
+  int get generation => _id;
+
   /// A main-frame load of [url] was asked for, by the app (`loadRequest`) or
   /// by the page (a link, a redirect).
   void request(String url) {
     _id++;
     _awaitingStart = true;
     _target = url;
-    _requestedPage = PageLoadPolicy.stripQuery(url);
+    _requestedPage = PageLoadPolicy.navigationKey(url);
   }
 
   /// `onPageStarted`. A start with no request before it (Android does not
@@ -37,7 +41,7 @@ class NavigationTracker {
   void started(String url) {
     if (!_awaitingStart) _id++;
     _awaitingStart = false;
-    _startedPage = PageLoadPolicy.stripQuery(url);
+    _startedPage = PageLoadPolicy.navigationKey(url);
     if (url.startsWith('https://')) _target = url;
   }
 
@@ -48,13 +52,13 @@ class NavigationTracker {
   bool finishedSuccessfully(String url) =>
       !_awaitingStart &&
       _failedId != _id &&
-      PageLoadPolicy.stripQuery(url) == _startedPage;
+      PageLoadPolicy.navigationKey(url) == _startedPage;
 
   /// Whether a resource error for [url] concerns the page being opened — not
   /// an image or script inside it, nor the page being left. Until the new page
   /// starts only the requested page counts; after that only the started one.
   bool isCurrentPage(String url) {
-    final page = PageLoadPolicy.stripQuery(url);
+    final page = PageLoadPolicy.navigationKey(url);
     return page == (_awaitingStart ? _requestedPage : _startedPage);
   }
 

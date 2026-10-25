@@ -61,8 +61,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   // Which navigation each WebView callback belongs to (see NavigationTracker:
   // Android's callback order varies, so this is kept out of the widget).
-  final NavigationTracker _nav =
-      NavigationTracker(AppUrls.homeFor(AppUrls.defaultLocale));
+  final NavigationTracker _nav = NavigationTracker(
+    AppUrls.homeFor(AppUrls.defaultLocale),
+  );
   int _consecutiveFailures = 0;
   bool _autoRecoveryUsed = false;
   Timer? _loadWatchdog;
@@ -74,17 +75,19 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(NavigationDelegate(
-        onPageStarted: _onPageStarted,
-        onProgress: (int progress) {
-          if (!mounted) return;
-          setState(() => _progress = progress / 100);
-        },
-        onPageFinished: _onPageFinished,
-        onWebResourceError: _onWebResourceError,
-        onHttpError: _onHttpError,
-        onNavigationRequest: _onNavigationRequest,
-      ));
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: _onPageStarted,
+          onProgress: (int progress) {
+            if (!mounted) return;
+            setState(() => _progress = progress / 100);
+          },
+          onPageFinished: _onPageFinished,
+          onWebResourceError: _onWebResourceError,
+          onHttpError: _onHttpError,
+          onNavigationRequest: _onNavigationRequest,
+        ),
+      );
 
     PendingLink.url.addListener(_onPendingLink);
 
@@ -99,8 +102,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
       if (!_pageEverShown) _startContentProbe();
     });
 
-    _connectivitySub =
-        Connectivity().onConnectivityChanged.listen(_onConnectivityChanged);
+    _connectivitySub = Connectivity().onConnectivityChanged.listen(
+      _onConnectivityChanged,
+    );
 
     unawaited(_start());
     ReviewService.checkAndPrompt();
@@ -126,7 +130,8 @@ class _WebViewScreenState extends State<WebViewScreen> {
     final deviceLanguage =
         WidgetsBinding.instance.platformDispatcher.locale.languageCode;
     _locale = AppUrls.localeOrDefault(
-        _prefs?.getString(_lastLocaleKey) ?? deviceLanguage);
+      _prefs?.getString(_lastLocaleKey) ?? deviceLanguage,
+    );
 
     // One-time cache clear after an update that needs it (kWebViewCacheEpoch).
     // clearCache() empties the HTTP cache only: cookies (the session) and
@@ -195,6 +200,21 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   void _onPageFinished(String url) {
     if (!_nav.finishedSuccessfully(url)) return;
+    unawaited(_confirmFinishedPage(url));
+  }
+
+  /// A nominal finish is not proof: an empty 200 or a page whose scripts died
+  /// "finishes" too. Only visible content counts; otherwise the watchdog stays
+  /// armed and treats the page as failed when it fires.
+  Future<void> _confirmFinishedPage(String url) async {
+    final generation = _nav.generation;
+    final hasContent = await _pageHasContent();
+    if (generation != _nav.generation || !mounted) return; // Superseded.
+    if (!hasContent) {
+      if (!(_loadWatchdog?.isActive ?? false)) _armWatchdog();
+      if (!_pageEverShown) _startContentProbe();
+      return;
+    }
     _loadWatchdog?.cancel();
     _markPageShown();
 
@@ -236,11 +256,17 @@ class _WebViewScreenState extends State<WebViewScreen> {
     )) {
       return;
     }
-    _fail(LoadFailure(
-      LoadFailureKind.network,
-      '${error.errorCode} ${error.errorType?.name ?? ''} ${error.description}'.trim(),
-      error.url ?? _nav.target,
-    ));
+    // A late error from the page being left must not fail the new one.
+    final url = error.url;
+    if (url != null && !_nav.isCurrentPage(url)) return;
+    _fail(
+      LoadFailure(
+        LoadFailureKind.network,
+        '${error.errorCode} ${error.errorType?.name ?? ''} ${error.description}'
+            .trim(),
+        error.url ?? _nav.target,
+      ),
+    );
   }
 
   void _onHttpError(HttpResponseError error) {
@@ -254,16 +280,22 @@ class _WebViewScreenState extends State<WebViewScreen> {
   }
 
   Future<void> _onLoadTimeout() async {
+    final generation = _nav.generation;
+    final hasContent = await _pageHasContent();
+    // A navigation that opened while the check ran is not this one's to fail.
+    if (generation != _nav.generation || !mounted) return;
     // A slow page that already shows something is left alone.
-    if (await _pageHasContent()) {
+    if (hasContent) {
       _markPageShown();
       return;
     }
-    _fail(LoadFailure(
-      LoadFailureKind.timeout,
-      'no content after ${PageLoadPolicy.loadTimeout.inSeconds}s (progress ${(_progress * 100).round()}%)',
-      _nav.target,
-    ));
+    _fail(
+      LoadFailure(
+        LoadFailureKind.timeout,
+        'no content after ${PageLoadPolicy.loadTimeout.inSeconds}s (progress ${(_progress * 100).round()}%)',
+        _nav.target,
+      ),
+    );
   }
 
   Future<bool> _pageHasContent() async {
@@ -281,12 +313,16 @@ class _WebViewScreenState extends State<WebViewScreen> {
   /// 1.5 s so a page that paints before its `load` event is shown at once.
   void _startContentProbe() {
     _contentProbe?.cancel();
-    _contentProbe = Timer.periodic(const Duration(milliseconds: 1500), (_) async {
+    _contentProbe = Timer.periodic(const Duration(milliseconds: 1500), (
+      _,
+    ) async {
       if (_pageEverShown || _loadFailed) {
         _contentProbe?.cancel();
         return;
       }
-      if (await _pageHasContent()) _markPageShown();
+      final generation = _nav.generation;
+      final hasContent = await _pageHasContent();
+      if (hasContent && generation == _nav.generation) _markPageShown();
     });
   }
 
@@ -415,7 +451,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
                       child: LinearProgressIndicator(value: _progress),
                     ),
                   if (!_pageEverShown && !_loadFailed && !_isOffline)
-                    Positioned.fill(child: LoadingScreen(label: strings.loading)),
+                    Positioned.fill(
+                      child: LoadingScreen(label: strings.loading),
+                    ),
                   if (_loadFailed && !_isOffline)
                     Positioned.fill(
                       child: RetryScreen.loadFailed(strings, onRetry: _retry),
