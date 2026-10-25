@@ -169,6 +169,18 @@ void main() {
     expect(nav.generation, isNot(before));
   });
 
+  test('Back to an older visit of a replaced address is still tracked', () {
+    final nav = NavigationTracker(home)
+      ..request(home)
+      ..started(home) // home committed: it is in the history
+      ..request(product)
+      ..started(product)
+      ..request(home) // a link back to home…
+      ..request('https://digitronics.ma/fr/promotions'); // …replaced at once
+    expect(nav.started(home), isTrue, reason: 'Back to the older home entry');
+    expect(nav.finishedSuccessfully(home), isTrue);
+  });
+
   test('images and scripts are not the page', () {
     final nav = NavigationTracker(home)
       ..request(home)

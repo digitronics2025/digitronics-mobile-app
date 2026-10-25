@@ -86,6 +86,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   bool? _startupConnectivityOffline;
   bool _autoRecoveryUsed = false;
   Timer? _loadWatchdog;
+  Timer? _blankCheck;
   Timer? _contentProbe;
 
   @override
@@ -135,6 +136,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _splashFallbackTimer?.cancel();
     _loadWatchdog?.cancel();
     _contentProbe?.cancel();
+    _blankCheck?.cancel();
     PendingLink.url.removeListener(_onPendingLink);
     _connectivitySub.cancel();
     super.dispose();
@@ -219,7 +221,25 @@ class _WebViewScreenState extends State<WebViewScreen> {
   void _onPageStarted(String url) {
     // A stale start (a replaced request) must not extend the current load's
     // deadline.
-    if (_nav.started(url)) _armWatchdog();
+    if (!_nav.started(url)) return;
+    _armWatchdog();
+    if (_pageEverShown) _scheduleBlankCheck();
+  }
+
+  /// A later page that commits blank and then hangs before its finish would
+  /// leave the WebView white until the watchdog. One check a few seconds after
+  /// the start covers it with the loading screen instead; a page that shows
+  /// content by then is untouched (no spinner flash on normal navigations).
+  void _scheduleBlankCheck() {
+    _blankCheck?.cancel();
+    final generation = _nav.generation;
+    _blankCheck = Timer(PageLoadPolicy.blankCheckDelay, () async {
+      if (generation != _nav.generation || _loadFailed) return;
+      final hasContent = await _pageHasContent();
+      if (hasContent || generation != _nav.generation || !mounted) return;
+      setState(() => _coverBlankPage = true);
+      _startContentProbe();
+    });
   }
 
   void _onPageFinished(String url) {

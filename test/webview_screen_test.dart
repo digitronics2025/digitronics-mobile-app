@@ -646,6 +646,33 @@ void main() {
     await settle(tester);
   });
 
+  testWidgets(
+    'a later page that commits blank and hangs is covered within seconds',
+    (tester) async {
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+      );
+      c.succeed(c.loads.single);
+      await settle(tester);
+      const next = 'https://digitronics.ma/fr/promotions';
+      await c.delegate!.onNavigationRequest!(
+        const NavigationRequest(url: next, isMainFrame: true),
+      );
+      c.contentResult = 0; // the committed document stays empty
+      c.delegate!.onPageStarted?.call(next); // committed, never finishes
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(LoadingScreen), findsNothing);
+      await tester.pump(const Duration(seconds: 3));
+      expect(find.byType(LoadingScreen), findsOneWidget);
+      c.contentResult = 1;
+      c.contentUrl = next;
+      c.delegate!.onPageFinished?.call(next);
+      await settle(tester);
+      expect(find.byType(LoadingScreen), findsNothing);
+    },
+  );
+
   testWidgets('a slow page that already shows content is never replaced', (
     tester,
   ) async {

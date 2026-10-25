@@ -31,6 +31,10 @@ class PageLoadPolicy {
   /// screen. A slow page that already shows content is never replaced.
   static const Duration loadTimeout = Duration(seconds: 20);
 
+  /// After a later page starts: when to check once whether it is blank, so a
+  /// blank page that hangs is covered long before [loadTimeout].
+  static const Duration blankCheckDelay = Duration(seconds: 3);
+
   /// How long the content check itself may take (a hung renderer never
   /// answers).
   static const Duration contentCheckTimeout = Duration(seconds: 3);
