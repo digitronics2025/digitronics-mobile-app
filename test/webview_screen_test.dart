@@ -673,6 +673,29 @@ void main() {
     },
   );
 
+  testWidgets('a later page failing is covered during the silent recovery', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+    );
+    c.succeed(c.loads.single);
+    await settle(tester);
+    const next = 'https://digitronics.ma/fr/promotions';
+    await c.delegate!.onNavigationRequest!(
+      const NavigationRequest(url: next, isMainFrame: true),
+    );
+    c.failMainFrame(next); // first failure: cache clear + reload
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(c.cacheClears, 1);
+    expect(find.byType(LoadingScreen), findsOneWidget);
+    c.contentUrl = next;
+    c.succeed(next);
+    await settle(tester);
+    expect(find.byType(LoadingScreen), findsNothing);
+  });
+
   testWidgets('a slow page that already shows content is never replaced', (
     tester,
   ) async {

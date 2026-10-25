@@ -408,6 +408,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
   }
 
   Future<void> _clearCacheAndReload() async {
+    // The failed page (blank, or WebView's own error page) stays covered by
+    // the loading screen through the cache clear and the reload, until the
+    // reloaded page shows content (_markPageShown) or fails again.
+    if (mounted) setState(() => _coverBlankPage = true);
     try {
       await _controller.clearCache();
     } catch (_) {
