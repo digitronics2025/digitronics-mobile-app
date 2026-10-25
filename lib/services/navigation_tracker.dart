@@ -51,12 +51,7 @@ class NavigationTracker {
   /// by the page (a link, a redirect).
   void request(String url) {
     final page = PageLoadPolicy.navigationKey(url);
-    if (_awaitingStart && _requestedPage != page) {
-      _supersededPages.add(_requestedPage);
-      if (_supersededPages.length > _maxSuperseded) {
-        _supersededPages.remove(_supersededPages.first);
-      }
-    }
+    if (_awaitingStart && _requestedPage != page) _supersede(_requestedPage);
     _supersededPages.remove(page); // Asked for again: its start is real.
     _id++;
     _generation++;
@@ -119,10 +114,24 @@ class NavigationTracker {
   /// navigation and must be tracked even if its URL matches a replaced
   /// request. The generation moves now, not at that start, so work pending
   /// for the page being left (a cache-clear reload, a content check) stops
-  /// before it can interrupt the Back.
+  /// before it can interrupt the Back. A request still waiting for its start
+  /// is cancelled by the Back: its late start stays stale, so it cannot take
+  /// the tracking from the page the shopper returned to.
   void historyRequested() {
+    if (_awaitingStart) {
+      _supersede(_requestedPage);
+      _awaitingStart = false;
+      _requestedPage = '';
+    }
     _expectHistoryStart = true;
     _generation++;
+  }
+
+  void _supersede(String page) {
+    _supersededPages.add(page);
+    if (_supersededPages.length > _maxSuperseded) {
+      _supersededPages.remove(_supersededPages.first);
+    }
   }
 
   /// Record that the current navigation failed. False when it was already

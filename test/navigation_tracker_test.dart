@@ -178,6 +178,17 @@ void main() {
     expect(nav.generation, isNot(before));
   });
 
+  test('a link cancelled by Back cannot take over when it starts late', () {
+    final nav = NavigationTracker(home)
+      ..request(home)
+      ..started(home)
+      ..request(product) // a link tapped…
+      ..historyRequested(); // …and Back pressed before it started
+    expect(nav.started(home), isTrue, reason: 'the history page');
+    expect(nav.started(product), isFalse, reason: "the cancelled link's start");
+    expect(nav.finishedSuccessfully(home), isTrue);
+  });
+
   test('Back to an older visit of a replaced address is still tracked', () {
     const promotions = 'https://digitronics.ma/fr/promotions';
     final nav = NavigationTracker(home)

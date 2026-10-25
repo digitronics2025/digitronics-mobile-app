@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -41,6 +42,31 @@ void main() {
       expect(payload['locale'], 'fr');
     },
   );
+
+  test('a slow older failure does not replace the newer kept report', () async {
+    const key = 'pending_load_report';
+    SharedPreferences.setMockInitialValues({});
+    final older = Completer<bool>();
+    final newer = Completer<bool>();
+    final first = LoadReportService.report(
+      message: 'timeout: older',
+      url: 'https://digitronics.ma/fr',
+      locale: 'fr',
+      send: (_) => older.future,
+    );
+    final second = LoadReportService.report(
+      message: 'timeout: newer',
+      url: 'https://digitronics.ma/fr',
+      locale: 'fr',
+      send: (_) => newer.future,
+    );
+    newer.complete(false);
+    await second;
+    older.complete(false);
+    await first;
+    final kept = (await SharedPreferences.getInstance()).getString(key)!;
+    expect(jsonDecode(kept)['message'], 'timeout: newer');
+  });
 
   group('flushPending', () {
     const key = 'pending_load_report';

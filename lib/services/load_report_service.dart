@@ -23,6 +23,11 @@ class LoadReportService {
   static const Duration _timeout = Duration(seconds: 10);
   static final Set<String> _sentThisLaunch = <String>{};
 
+  /// Order of [report] calls, so a slow older failure never overwrites the
+  /// newer report already kept.
+  static int _reportSeq = 0;
+  static int _keptSeq = 0;
+
   /// JSON body for the endpoint. Pure, so it is unit-tested.
   static Map<String, Object> buildPayload({
     required String message,
@@ -42,10 +47,14 @@ class LoadReportService {
     required String message,
     required String url,
     required String locale,
+    ReportSender? send,
   }) async {
     if (!_sentThisLaunch.add(message)) return;
+    final seq = ++_reportSeq;
     final payload = buildPayload(message: message, url: url, locale: locale);
-    if (await _post(payload)) return;
+    if (await (send ?? _post)(payload)) return;
+    if (seq < _keptSeq) return; // A newer report is already kept.
+    _keptSeq = seq;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_pendingKey, jsonEncode(payload));
