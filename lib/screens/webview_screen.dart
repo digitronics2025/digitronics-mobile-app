@@ -497,6 +497,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
         // offline screen: the previous page is usually still usable, and its
         // successful load clears the overlay (_markPageShown).
         if (await _controller.canGoBack()) {
+          _nav.historyRequested();
           await _controller.goBack();
           return;
         }

@@ -170,16 +170,38 @@ void main() {
   });
 
   test('Back to an older visit of a replaced address is still tracked', () {
+    const promotions = 'https://digitronics.ma/fr/promotions';
     final nav = NavigationTracker(home)
       ..request(home)
       ..started(home) // home committed: it is in the history
       ..request(product)
       ..started(product)
       ..request(home) // a link back to home…
-      ..request('https://digitronics.ma/fr/promotions'); // …replaced at once
+      ..request(promotions) // …replaced at once
+      ..started(promotions)
+      ..historyRequested(); // the shopper presses Back
     expect(nav.started(home), isTrue, reason: 'Back to the older home entry');
     expect(nav.finishedSuccessfully(home), isTrue);
   });
+
+  test(
+    'a replaced re-request of a visited page stays stale without a Back',
+    () {
+      const promotions = 'https://digitronics.ma/fr/promotions';
+      final nav = NavigationTracker(home)
+        ..request(home)
+        ..started(home) // home committed earlier
+        ..request(home) // asked for again…
+        ..request(promotions) // …and replaced before it started
+        ..started(promotions);
+      expect(
+        nav.started(home),
+        isFalse,
+        reason: "the replaced load's late start",
+      );
+      expect(nav.finishedSuccessfully(promotions), isTrue);
+    },
+  );
 
   test('images and scripts are not the page', () {
     final nav = NavigationTracker(home)

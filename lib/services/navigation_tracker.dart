@@ -22,18 +22,17 @@ class NavigationTracker {
   String _startedPage = '';
 
   /// Pages requested earlier and replaced by a newer request before they
-  /// started and never committed before, so it cannot be in the history: any
-  /// later start for it is stale — even after the newer page started. A page
-  /// leaves the set when it is requested again; the set keeps the most recent
-  /// [_maxSuperseded] entries.
+  /// started. A later start for one of them is stale — even after the newer
+  /// page started — except the start of a Back the app performed
+  /// ([historyRequested]), which may reach an older entry with the same URL.
+  /// A page leaves the set when it is requested again; the set keeps the most
+  /// recent [_maxSuperseded] entries.
   final Set<String> _supersededPages = <String>{};
   static const int _maxSuperseded = 8;
 
-  /// Pages that have started (committed) before. Such a page can be in the
-  /// history, so replacing a new request for it never marks it stale: a Back
-  /// to the older entry must still be tracked. Bounded like a history.
-  final Set<String> _committedPages = <String>{};
-  static const int _maxCommitted = 50;
+  /// Set by [historyRequested] when the app itself goes Back: the next start
+  /// is a history entry, which may share its URL with a replaced request.
+  bool _expectHistoryStart = false;
 
   /// The page a retry should load: the latest one asked for.
   String get target => _target;
@@ -52,9 +51,7 @@ class NavigationTracker {
   /// by the page (a link, a redirect).
   void request(String url) {
     final page = PageLoadPolicy.navigationKey(url);
-    if (_awaitingStart &&
-        _requestedPage != page &&
-        !_committedPages.contains(_requestedPage)) {
+    if (_awaitingStart && _requestedPage != page) {
       _supersededPages.add(_requestedPage);
       if (_supersededPages.length > _maxSuperseded) {
         _supersededPages.remove(_supersededPages.first);
@@ -79,10 +76,16 @@ class NavigationTracker {
   /// not treat it as activity of the current navigation.
   bool started(String url) {
     final page = PageLoadPolicy.navigationKey(url);
-    // A late start for a request that a newer one replaced: not this load.
-    if (page != _requestedPage && _supersededPages.contains(page)) {
+    // A late start for a request that a newer one replaced: not this load —
+    // unless the app just went Back, whose history entry may share the URL.
+    final isHistory = _expectHistoryStart;
+    _expectHistoryStart = false;
+    if (!isHistory &&
+        page != _requestedPage &&
+        _supersededPages.contains(page)) {
       return false;
     }
+    if (isHistory) _supersededPages.remove(page);
     final supersedesFailedRequest =
         _awaitingStart && _failedId == _id && page != _requestedPage;
     if (!_awaitingStart || supersedesFailedRequest) {
@@ -91,12 +94,6 @@ class NavigationTracker {
     }
     _awaitingStart = false;
     _startedPage = page;
-    _committedPages
-      ..remove(page)
-      ..add(page);
-    if (_committedPages.length > _maxCommitted) {
-      _committedPages.remove(_committedPages.first);
-    }
     if (url.startsWith('https://')) _target = url;
     return true;
   }
@@ -117,6 +114,11 @@ class NavigationTracker {
     final page = PageLoadPolicy.navigationKey(url);
     return page == (_awaitingStart ? _requestedPage : _startedPage);
   }
+
+  /// The app is about to go Back (`goBack()`): the next start is a history
+  /// navigation and must be tracked even if its URL matches a replaced
+  /// request.
+  void historyRequested() => _expectHistoryStart = true;
 
   /// Record that the current navigation failed. False when it was already
   /// recorded, so one navigation is handled once.
