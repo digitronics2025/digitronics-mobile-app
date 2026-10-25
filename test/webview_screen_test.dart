@@ -556,6 +556,96 @@ void main() {
     },
   );
 
+  testWidgets('a later page that commits blank is covered, not white', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+    );
+    c.succeed(c.loads.single);
+    await settle(tester);
+    const next = 'https://digitronics.ma/fr/promotions';
+    await c.delegate!.onNavigationRequest!(
+      const NavigationRequest(url: next, isMainFrame: true),
+    );
+    c.contentResult = 0; // the new document is empty
+    c.succeed(next);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.byType(LoadingScreen), findsOneWidget);
+    c.contentResult = 1;
+    c.contentUrl = next;
+    await tester.pump(const Duration(seconds: 2)); // the probe sees content
+    expect(find.byType(LoadingScreen), findsNothing);
+    await settle(tester);
+  });
+
+  testWidgets(
+    'a cached page while offline hides the offline screen but keeps links queued',
+    (tester) async {
+      final events = StreamController<List<String>>.broadcast();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockStreamHandler(
+            _connectivityEvents,
+            MockStreamHandler.inline(
+              onListen: (_, sink) {
+                events.stream.listen(sink.success);
+              },
+            ),
+          );
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch, 'last_locale': 'fr'},
+      );
+      c.succeed(c.loads.single);
+      await settle(tester);
+      events.add(['none']);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('Pas de connexion Internet'), findsOneWidget);
+      c.delegate!.onPageStarted?.call(c.loads.single); // reload from cache
+      c.delegate!.onPageFinished?.call(c.loads.single);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('Pas de connexion Internet'), findsNothing);
+      PendingLink.offer('/fr/produit/tv-50');
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(c.loads.length, 1, reason: 'still offline: the link is queued');
+      events.add(['wifi']);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(c.loads.last, 'https://digitronics.ma/fr/produit/tv-50');
+      c.succeed(c.loads.last);
+      await settle(tester);
+      await events.close();
+    },
+  );
+
+  testWidgets('a stale start does not push back the stalled page deadline', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+    );
+    final home = c.loads.single;
+    c.succeed(home);
+    await settle(tester);
+    c.contentUrl = home; // home's text stays on screen
+    const a = 'https://digitronics.ma/fr/promotions';
+    const b = 'https://digitronics.ma/fr/produit/tv';
+    await c.delegate!.onNavigationRequest!(
+      const NavigationRequest(url: a, isMainFrame: true),
+    );
+    await c.delegate!.onNavigationRequest!(
+      const NavigationRequest(url: b, isMainFrame: true),
+    );
+    await tester.pump(const Duration(seconds: 19));
+    c.delegate!.onPageStarted?.call(a); // late, stale start for A
+    await tester.pump(const Duration(seconds: 2)); // B's 20 s deadline passes
+    expect(c.cacheClears, 1, reason: 'B failed on time and was retried');
+    expect(c.loads.last, b);
+    c.succeed(b);
+    await settle(tester);
+  });
+
   testWidgets('a slow page that already shows content is never replaced', (
     tester,
   ) async {

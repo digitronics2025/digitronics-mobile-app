@@ -49,6 +49,18 @@ class _WebViewScreenState extends State<WebViewScreen> {
   bool _isOffline = false;
   bool _loadFailed = false;
   bool _pageEverShown = false;
+
+  /// The committed document of the current navigation is blank (an empty 200,
+  /// a page whose scripts died): covered by the loading screen until content
+  /// appears or the load fails, on any navigation.
+  bool _coverBlankPage = false;
+
+  /// While offline, a page loaded from cache is usable, so the offline screen
+  /// steps aside without pretending the network is back.
+  bool _cachedPageWhileOffline = false;
+
+  bool get _needsContentCover => !_pageEverShown || _coverBlankPage;
+  bool get _showOffline => _isOffline && !_cachedPageWhileOffline;
   DateTime? _lastBackPress;
 
   // Splash overlay: dismissed once the first page has loaded AND a minimum
@@ -205,8 +217,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
   }
 
   void _onPageStarted(String url) {
-    _nav.started(url);
-    _armWatchdog();
+    // A stale start (a replaced request) must not extend the current load's
+    // deadline.
+    if (_nav.started(url)) _armWatchdog();
   }
 
   void _onPageFinished(String url) {
@@ -223,7 +236,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
     if (generation != _nav.generation || !mounted) return; // Superseded.
     if (!hasContent) {
       if (!(_loadWatchdog?.isActive ?? false)) _armWatchdog();
-      if (!_pageEverShown) _startContentProbe();
+      // The committed document is blank: cover it (on any navigation, not
+      // only the first) until content appears or the load fails.
+      setState(() => _coverBlankPage = true);
+      _startContentProbe();
       return;
     }
     _loadWatchdog?.cancel();
@@ -252,10 +268,13 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _pageEverShown = true;
     if (!mounted) return;
     // A page is on screen and usable (possibly from cache while offline), so
-    // neither the retry nor the offline screen may keep covering it.
+    // neither the retry nor the offline screen may keep covering it. The
+    // connectivity state itself is left alone: links tapped meanwhile still
+    // queue, and the real reconnect still fires.
     setState(() {
       _loadFailed = false;
-      _isOffline = false;
+      _coverBlankPage = false;
+      if (_isOffline) _cachedPageWhileOffline = true;
     });
     _maybeHideSplash();
   }
@@ -331,7 +350,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _contentProbe = Timer.periodic(const Duration(milliseconds: 1500), (
       _,
     ) async {
-      if (_pageEverShown || _loadFailed) {
+      if (!_needsContentCover || _loadFailed) {
         _contentProbe?.cancel();
         return;
       }
@@ -384,7 +403,12 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   Future<void> _retry() async {
     if (await _connectivityIsNone()) {
-      if (mounted) setState(() => _isOffline = true);
+      if (mounted) {
+        setState(() {
+          _isOffline = true;
+          _cachedPageWhileOffline = false;
+        });
+      }
       return;
     }
     if (!mounted) return;
@@ -404,7 +428,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
       return;
     }
     if (offline == _isOffline || !mounted) return;
-    setState(() => _isOffline = offline);
+    setState(() {
+      _isOffline = offline;
+      _cachedPageWhileOffline = false;
+    });
     if (offline) return;
     // Back online: open a link tapped while offline, else reload only what
     // never loaded. A page already on screen (a shopper mid-checkout) is left
@@ -484,15 +511,15 @@ class _WebViewScreenState extends State<WebViewScreen> {
                       right: 0,
                       child: LinearProgressIndicator(value: _progress),
                     ),
-                  if (!_pageEverShown && !_loadFailed && !_isOffline)
+                  if (_needsContentCover && !_loadFailed && !_showOffline)
                     Positioned.fill(
                       child: LoadingScreen(label: strings.loading),
                     ),
-                  if (_loadFailed && !_isOffline)
+                  if (_loadFailed && !_showOffline)
                     Positioned.fill(
                       child: RetryScreen.loadFailed(strings, onRetry: _retry),
                     ),
-                  if (_isOffline)
+                  if (_showOffline)
                     Positioned.fill(
                       child: RetryScreen.offline(strings, onRetry: _retry),
                     ),

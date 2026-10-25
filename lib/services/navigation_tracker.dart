@@ -66,10 +66,15 @@ class NavigationTracker {
   /// (Back from the retry screen), so the failed request's mark never sticks
   /// to it. The failed request's own late start stays failed, and a late
   /// start for a request a newer one replaced is ignored.
-  void started(String url) {
+  ///
+  /// Returns false when the start was rejected as stale, so the caller does
+  /// not treat it as activity of the current navigation.
+  bool started(String url) {
     final page = PageLoadPolicy.navigationKey(url);
     // A late start for a request that a newer one replaced: not this load.
-    if (page != _requestedPage && _supersededPages.contains(page)) return;
+    if (page != _requestedPage && _supersededPages.contains(page)) {
+      return false;
+    }
     final supersedesFailedRequest =
         _awaitingStart && _failedId == _id && page != _requestedPage;
     if (!_awaitingStart || supersedesFailedRequest) {
@@ -79,6 +84,7 @@ class NavigationTracker {
     _awaitingStart = false;
     _startedPage = page;
     if (url.startsWith('https://')) _target = url;
+    return true;
   }
 
   /// `onPageFinished` for [url]: true only when it completes the current

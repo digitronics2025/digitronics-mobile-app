@@ -131,7 +131,7 @@ void main() {
     final nav = NavigationTracker(home)
       ..request(home)
       ..request(product); // a notification arrives before home started
-    nav.started(home); // home's start, delivered late
+    expect(nav.started(home), isFalse, reason: "home's late start is stale");
     expect(nav.awaitingStart, isTrue, reason: 'still waiting for the product');
     expect(nav.target, product);
     expect(nav.finishedSuccessfully(home), isFalse);
