@@ -1101,6 +1101,37 @@ void main() {
     await settle(tester);
   });
 
+  testWidgets('a load error after the page was shown does not cover it', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+    );
+    c.succeed(c.loads.single);
+    await settle(tester);
+    const next = 'https://digitronics.ma/fr/promotions';
+    await c.delegate!.onNavigationRequest!(
+      const NavigationRequest(url: next, isMainFrame: true),
+    );
+    c.contentUrl = next;
+    c.delegate!.onPageStarted!(next); // paints, no finish yet
+    await tester.pump(const Duration(seconds: 21)); // the deadline accepts it
+    c.delegate!.onWebResourceError!(
+      const WebResourceError(
+        errorCode: -6,
+        description: 'net::ERR_CONNECTION_RESET',
+        isForMainFrame: true,
+        url: next,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(c.cacheClears, 0);
+    expect(find.byType(LoadingScreen), findsNothing);
+    expect(find.byType(RetryScreen), findsNothing);
+    await settle(tester);
+  });
+
   testWidgets('a bare-domain App Link opens home in the shopper\'s language', (
     tester,
   ) async {

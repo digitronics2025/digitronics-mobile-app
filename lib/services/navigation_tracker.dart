@@ -56,6 +56,9 @@ class NavigationTracker {
     final page = PageLoadPolicy.navigationKey(url);
     if (_awaitingStart && _requestedPage != page) _supersede(_requestedPage);
     _supersededPages.remove(page); // Asked for again: its start is real.
+    // A Back still waiting for its start is replaced by this request: its
+    // exemption must not let a different stale start through.
+    _expectHistoryStart = false;
     _id++;
     _generation++;
     _awaitingStart = true;

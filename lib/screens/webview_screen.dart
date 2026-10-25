@@ -337,7 +337,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
     )) {
       return;
     }
-    // A late error from the page being left must not fail the new one.
+    // A late error from the page being left must not fail the new one, and
+    // one arriving after the page's content was accepted (a reset once the
+    // body painted) must not cover a usable page.
+    if (_nav.generation == _shownGeneration) return;
     final url = error.url;
     if (url != null && !_nav.isCurrentPage(url)) return;
     _fail(
@@ -354,7 +357,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
     final status = error.response?.statusCode;
     final url = error.request?.uri.toString();
     if (status == null || url == null) return;
-    // Sub-resources report HTTP errors too; only the page itself counts.
+    // Sub-resources report HTTP errors too; only the page itself counts, and
+    // only while its content has not been accepted.
+    if (_nav.generation == _shownGeneration) return;
     if (!_nav.isCurrentPage(url)) return;
     if (!PageLoadPolicy.isFatalHttpStatus(status)) return;
     _fail(LoadFailure(LoadFailureKind.http, 'status $status', url));

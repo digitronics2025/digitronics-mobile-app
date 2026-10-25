@@ -189,6 +189,20 @@ void main() {
     expect(nav.finishedSuccessfully(home), isTrue);
   });
 
+  test('a request after Back takes the Back exemption away', () {
+    const promotions = 'https://digitronics.ma/fr/promotions';
+    const cart = 'https://digitronics.ma/fr/panier';
+    final nav = NavigationTracker(home)
+      ..request(home)
+      ..started(home)
+      ..request(promotions) // replaced before it started
+      ..request(product)
+      ..historyRequested() // Back…
+      ..request(cart); // …replaced by a notification link
+    expect(nav.started(promotions), isFalse, reason: 'still a stale start');
+    expect(nav.started(cart), isTrue);
+  });
+
   test('Back to an older visit of a replaced address is still tracked', () {
     const promotions = 'https://digitronics.ma/fr/promotions';
     final nav = NavigationTracker(home)
