@@ -75,6 +75,18 @@ void main() {
       expect((await SharedPreferences.getInstance()).getString(key), isNull);
     });
 
+    test('keeps a newer report saved while the older one was sent', () async {
+      SharedPreferences.setMockInitialValues({key: saved});
+      final newer = jsonEncode({'scope': 'app', 'message': 'recovered'});
+      await LoadReportService.flushPending(
+        send: (_) async {
+          await (await SharedPreferences.getInstance()).setString(key, newer);
+          return true;
+        },
+      );
+      expect((await SharedPreferences.getInstance()).getString(key), newer);
+    });
+
     test('drops a corrupt saved report without sending it', () async {
       SharedPreferences.setMockInitialValues({key: 'not json'});
       var calls = 0;

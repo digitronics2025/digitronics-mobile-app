@@ -195,7 +195,8 @@ handling, no time limit, no retry, so any failure looked like that.
 2. The app opens `/fr`, `/ar` or `/en` directly (no redirect hop).
 3. A failure is: a network error on the page itself, an HTTP 403/429/5xx on
    the page itself, or 20 s with nothing visible. A slow page that already
-   shows something is never replaced, and the site's own 404 page stays.
+   shows something is never replaced (once a page is shown, its 20 s
+   deadline is dropped), and the site's own 404 page stays.
 4. The first failure per launch clears the cache and reloads silently. The
    next one shows "La page ne s'est pas chargée" with **Réessayer** (which
    clears the cache and reloads again). Offline shows the offline screen and
@@ -205,7 +206,7 @@ handling, no time limit, no retry, so any failure looked like that.
    ([`load_report_service.dart`](../lib/services/load_report_service.dart)).
    Reports land in the site's system logs as warnings (code
    `error-boundary:app`). A report that cannot be sent (no network) is kept
-   and sent after the next page that loads.
+   (the latest only) and sent after the next page that loads.
 
 **Startup:** the shop starts loading before notifications are set up (they
 used to come first and could hold the launch screen on a slow network).

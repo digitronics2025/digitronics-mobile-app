@@ -581,6 +581,36 @@ void main() {
   });
 
   testWidgets(
+    'a page the probe revealed is not failed later by the load deadline',
+    (tester) async {
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+      );
+      c.succeed(c.loads.single);
+      await settle(tester);
+      const next = 'https://digitronics.ma/fr/promotions';
+      await c.delegate!.onNavigationRequest!(
+        const NavigationRequest(url: next, isMainFrame: true),
+      );
+      c.contentResult = 0;
+      c.succeed(next);
+      await tester.pump(const Duration(milliseconds: 50));
+      c.contentResult = 1;
+      c.contentUrl = next;
+      await tester.pump(const Duration(seconds: 2)); // the probe sees content
+      expect(find.byType(LoadingScreen), findsNothing);
+      // A later check would catch a momentarily empty body.
+      c.contentResult = 0;
+      await tester.pump(const Duration(seconds: 25));
+      expect(c.cacheClears, 0, reason: 'no recovery for a page already shown');
+      expect(find.byType(RetryScreen), findsNothing);
+      expect(find.byType(LoadingScreen), findsNothing);
+      await settle(tester);
+    },
+  );
+
+  testWidgets(
     'a cached page while offline hides the offline screen but keeps links queued',
     (tester) async {
       final events = StreamController<List<String>>.broadcast();
@@ -826,4 +856,19 @@ void main() {
       await settle(tester);
     },
   );
+
+  testWidgets('a bare-domain App Link opens home in the shopper\'s language', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch, 'last_locale': 'ar'},
+    );
+    c.succeed(c.loads.single);
+    PendingLink.offer(LinkRouterDelegate.homeLink);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(c.loads.last, 'https://digitronics.ma/ar');
+    expect(c.loads.length, 2);
+    await settle(tester);
+  });
 }

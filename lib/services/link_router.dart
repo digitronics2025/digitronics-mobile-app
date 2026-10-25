@@ -43,11 +43,18 @@ class LinkRouterDelegate extends RouterDelegate<Uri>
   @override
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-  /// `/` (a plain launch) is not a link; any other path, query or `#section`
-  /// is, and all three are kept so the tapped section opens.
-  static String? routeToUrl(Uri route) {
+  /// A link to the bare domain while the app runs. WebViewScreen opens it
+  /// as the home page in the shopper's language.
+  static const String homeLink = '${AppUrls.baseUrl}/';
+
+  /// Any path, query or `#section` is a link, and all three are kept so the
+  /// tapped section opens. A bare `/` is a link only after launch
+  /// ([rootIsLink]): at launch it is just the default route.
+  static String? routeToUrl(Uri route, {bool rootIsLink = false}) {
     final path = route.path.isEmpty ? '/' : route.path;
-    if (path == '/' && !route.hasQuery && !route.hasFragment) return null;
+    if (path == '/' && !route.hasQuery && !route.hasFragment) {
+      return rootIsLink ? homeLink : null;
+    }
     return AppUrls.inAppUrl(
       Uri(
         path: path,
@@ -57,9 +64,19 @@ class LinkRouterDelegate extends RouterDelegate<Uri>
     );
   }
 
+  /// The launch route: `/` for a plain launch, or the App Link that opened
+  /// the app.
+  @override
+  Future<void> setInitialRoutePath(Uri configuration) {
+    PendingLink.offer(routeToUrl(configuration));
+    return SynchronousFuture<void>(null);
+  }
+
+  /// A route pushed while the app runs is always an App Link, including
+  /// `https://digitronics.ma/` (route `/`).
   @override
   Future<void> setNewRoutePath(Uri configuration) {
-    PendingLink.offer(routeToUrl(configuration));
+    PendingLink.offer(routeToUrl(configuration, rootIsLink: true));
     return SynchronousFuture<void>(null);
   }
 

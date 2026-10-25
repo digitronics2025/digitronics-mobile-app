@@ -178,7 +178,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
     // Only now does startup stop deferring links to itself: one tapped while
     // the checks above ran is taken here, never overwritten by the home page.
     _started = true;
-    final firstPage = PendingLink.take() ?? AppUrls.homeFor(_locale);
+    final link = PendingLink.take();
+    final firstPage = link != null
+        ? _resolveLink(link)
+        : AppUrls.homeFor(_locale);
     if (offline) {
       setState(() {
         _isOffline = true;
@@ -266,7 +269,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
       _startContentProbe();
       return;
     }
-    _loadWatchdog?.cancel();
     _markPageShown();
 
     final locale = AppUrls.localeOf(Uri.parse(url));
@@ -287,7 +289,13 @@ class _WebViewScreenState extends State<WebViewScreen> {
     unawaited(LoadReportService.flushPending());
   }
 
+  /// Every route that accepts content ends here, so the load deadline and
+  /// the blank check go with it: a page already shown must not be covered or
+  /// failed later by a check that times out or catches a momentarily empty
+  /// body.
   void _markPageShown() {
+    _loadWatchdog?.cancel();
+    _blankCheck?.cancel();
     _contentProbe?.cancel();
     _pageEverShown = true;
     if (!mounted) return;
@@ -483,14 +491,20 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   void _onPendingLink() {
     if (!_started) return; // _start() takes it for the first page.
-    final url = PendingLink.take();
-    if (url == null) return;
+    final link = PendingLink.take();
+    if (link == null) return;
+    final url = _resolveLink(link);
     if (_isOffline) {
       _queuedLink = url; // Opened by _onConnectivityChanged or Retry.
       return;
     }
     _load(url);
   }
+
+  /// A link to the bare domain opens the home page in the shopper's own
+  /// language, not the site's default-locale redirect.
+  String _resolveLink(String url) =>
+      url == LinkRouterDelegate.homeLink ? AppUrls.homeFor(_locale) : url;
 
   void _maybeHideSplash() {
     if (_pageEverShown && _minSplashElapsed && _showSplash && mounted) {

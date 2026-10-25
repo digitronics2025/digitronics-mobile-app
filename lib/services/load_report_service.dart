@@ -56,7 +56,9 @@ class LoadReportService {
 
   /// Send the report kept from an earlier failure, now that a page loaded.
   /// It is removed only once the site accepted it, so a page that loads while
-  /// the endpoint is still unreachable keeps it for the next try.
+  /// the endpoint is still unreachable keeps it for the next try — and only
+  /// if it is still the one kept: a newer report saved while this one was in
+  /// flight stays for the next flush.
   static Future<void> flushPending({ReportSender? send}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -67,7 +69,8 @@ class LoadReportService {
         await prefs.remove(_pendingKey); // Corrupt: never sendable.
         return;
       }
-      if (await (send ?? _post)(payload)) await prefs.remove(_pendingKey);
+      if (!await (send ?? _post)(payload)) return;
+      if (prefs.getString(_pendingKey) == raw) await prefs.remove(_pendingKey);
     } catch (_) {
       // Kept for the next page that loads.
     }

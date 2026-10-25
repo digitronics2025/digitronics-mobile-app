@@ -10,6 +10,25 @@ void main() {
     expect(LinkRouterDelegate.routeToUrl(Uri()), isNull);
   });
 
+  test('a bare-domain App Link after launch is the home link', () {
+    expect(
+      LinkRouterDelegate.routeToUrl(Uri.parse('/'), rootIsLink: true),
+      LinkRouterDelegate.homeLink,
+    );
+  });
+
+  test(
+    'the launch route / is ignored; the same route later opens home',
+    () async {
+      final delegate = LinkRouterDelegate(home: const SizedBox());
+      await delegate.setInitialRoutePath(Uri.parse('/'));
+      expect(PendingLink.url.value, isNull);
+      await delegate.setNewRoutePath(Uri.parse('/'));
+      expect(PendingLink.take(), 'https://digitronics.ma/');
+      delegate.dispose();
+    },
+  );
+
   test('an App Link route becomes the same page on this site', () {
     expect(
       LinkRouterDelegate.routeToUrl(Uri.parse('/fr/produit/tv-50?ref=share')),
