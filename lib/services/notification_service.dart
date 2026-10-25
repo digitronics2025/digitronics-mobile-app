@@ -1,9 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+import '../constants/app_info.dart';
+import '../constants/urls.dart';
+import 'link_router.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -16,13 +19,10 @@ class NotificationService {
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
 
-  /// URL carried by a tapped notification. [WebViewScreen] listens to this and
-  /// deep-links into the target page. Null when nothing is pending.
-  static final ValueNotifier<String?> pendingUrl = ValueNotifier<String?>(null);
-
   /// Backend endpoint that stores FCM tokens for targeted campaigns.
-  static const String _registerEndpoint =
-      'https://digitronics.ma/api/v1/push/register';
+  static const String _registerEndpoint = AppUrls.pushRegisterEndpoint;
+
+  static const Duration _httpTimeout = Duration(seconds: 10);
 
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
     'digitronics_channel',
@@ -35,10 +35,13 @@ class NotificationService {
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
     await _setupLocalNotifications();
-    await _requestPermission();
-    await _registerToken();
+    // Listeners first: the app is on screen while the permission prompt and
+    // the token upload below run, and a message or tap in that window must
+    // not be missed (a background-open tap is not replayed later).
     _listenForegroundMessages();
     _listenNotificationTaps();
+    await _requestPermission();
+    await _registerToken();
   }
 
   static Future<void> _setupLocalNotifications() async {
@@ -48,10 +51,8 @@ class NotificationService {
     await _localNotifications.initialize(
       settings: initSettings,
       onDidReceiveNotificationResponse: (response) {
-        final payload = response.payload;
-        if (payload != null && payload.isNotEmpty) {
-          pendingUrl.value = payload;
-        }
+        // Tapped notification: WebViewScreen opens the page (own site only).
+        PendingLink.offer(response.payload);
       },
     );
 
@@ -86,23 +87,27 @@ class NotificationService {
   }
 
   static Future<void> _sendToken(String token) async {
+    final client = HttpClient()..connectionTimeout = _httpTimeout;
     try {
-      final client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 10);
-      final request = await client.postUrl(Uri.parse(_registerEndpoint));
+      final request = await client
+          .postUrl(Uri.parse(_registerEndpoint))
+          .timeout(_httpTimeout);
       request.headers.contentType = ContentType.json;
       // Identify app traffic in logs and to the WAF (see /push/register route).
-      request.headers.set(HttpHeaders.userAgentHeader,
-          'DigitronicsApp/1.0 (Android; FCM-register)');
+      request.headers
+          .set(HttpHeaders.userAgentHeader, appUserAgent('FCM-register'));
       request.add(utf8.encode(jsonEncode({
         'token': token,
         'platform': 'android',
+        'appVersion': kAppVersion,
       })));
-      final response = await request.close();
-      await response.drain<void>();
-      client.close();
+      // Every step is bounded: a stalled network must not hold a socket open.
+      final response = await request.close().timeout(_httpTimeout);
+      await response.drain<void>().timeout(_httpTimeout);
     } catch (_) {
       // Ignore network errors; the token is re-sent on next launch / refresh.
+    } finally {
+      client.close(force: true);
     }
   }
 
@@ -138,8 +143,7 @@ class NotificationService {
   }
 
   static void _routeMessage(RemoteMessage message) {
-    final url = _urlFrom(message);
-    if (url != null) pendingUrl.value = url;
+    PendingLink.offer(_urlFrom(message));
   }
 
   /// Extract a target URL from a message's data payload, if present.

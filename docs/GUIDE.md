@@ -1,7 +1,7 @@
 # Digitronics App — Complete Guide
 
 > Single source of truth for the Digitronics Android app. Start here for any change.
-> Last updated: 2026-07-02
+> Last updated: 2026-10-24 (1.0.13: no more white screen — §11)
 
 ---
 
@@ -15,8 +15,10 @@ only owns the native shell.
 - **Package:** `com.maroc.digitronics`
 - **Base URL:** `https://digitronics.ma`
 - **Stack:** Flutter (Dart SDK ^3.8.1), Android only (iOS not built)
-- **Native features:** animated splash, Firebase push (FCM), offline screen,
-  external-link routing, deep links (App Links), in-app review prompt.
+- **Native features:** animated splash, Firebase push (FCM), offline and
+  "page did not load" retry screens, external-link routing, deep links (App
+  Links, opened at the tapped page since 1.0.13), page-load error reporting,
+  in-app review prompt.
 
 ---
 
@@ -51,10 +53,14 @@ There is **no local build** — Flutter isn't installed on this PC; the cloud do
 | **System (OS) launch splash color/logo** | `flutter_native_splash:` block in [`pubspec.yaml`](../pubspec.yaml) (regenerated in CI) |
 | **App icon** | `flutter_launcher_icons:` block in [`pubspec.yaml`](../pubspec.yaml) + images in [`assets/icon/`](../assets/icon) |
 | **App theme / brand color** | `kBrandRed` in [`lib/app.dart`](../lib/app.dart) |
-| **Offline screen text** | [`lib/screens/offline_screen.dart`](../lib/screens/offline_screen.dart) |
+| **Offline / "page did not load" / loading screens** | [`lib/screens/retry_screen.dart`](../lib/screens/retry_screen.dart); their words (fr/ar/en) in [`lib/l10n/app_strings.dart`](../lib/l10n/app_strings.dart) |
+| **What counts as a failed page load, the 20 s timeout** | [`lib/services/page_load_policy.dart`](../lib/services/page_load_policy.dart) (§11) |
+| **Clear every phone's WebView cache once after an update** | bump `kWebViewCacheEpoch` in [`lib/constants/app_info.dart`](../lib/constants/app_info.dart) |
 | **Which links open in-app vs. a native app** | `_externalHosts` in [`lib/services/external_link_service.dart`](../lib/services/external_link_service.dart) |
-| **The website the app loads** | `AppUrls.baseUrl` in [`lib/constants/urls.dart`](../lib/constants/urls.dart) |
-| **Push-notification behaviour / deep-link routing** | [`lib/services/notification_service.dart`](../lib/services/notification_service.dart) |
+| **The website the app loads** | `AppUrls` in [`lib/constants/urls.dart`](../lib/constants/urls.dart) — it opens `/fr`, `/ar` or `/en` directly (the last language used on the site, else the phone's). Cross-repo contract: update FLEET.md in the same commit |
+| **App version** | `version:` in [`pubspec.yaml`](../pubspec.yaml) **and** `kAppVersion` in [`lib/constants/app_info.dart`](../lib/constants/app_info.dart) (a test fails if they differ) |
+| **Push-notification behaviour** | [`lib/services/notification_service.dart`](../lib/services/notification_service.dart) |
+| **Deep-link routing (App Links + notification URLs)** | [`lib/services/link_router.dart`](../lib/services/link_router.dart) — only `https://digitronics.ma` pages are ever opened in-app |
 | **When the review prompt appears** | `_openThreshold` in [`lib/services/review_service.dart`](../lib/services/review_service.dart) |
 | **Android permissions / manifest** | [`android/app/src/main/AndroidManifest.xml`](../android/app/src/main/AndroidManifest.xml) |
 | **Store listing (name, description, screenshots)** | Play Console → *Grow users → Store presence* (see §7) |
@@ -107,6 +113,19 @@ and [`HANDOFF.md`](HANDOFF.md).
   internal track.
 
 Check runs: repo → **Actions** tab, or `gh run list`.
+
+**Toolchain floor (24/10/2026).** Both workflows build with the *latest stable*
+Flutter, which on 3.47 requires Gradle ≥ 8.14, Android Gradle Plugin ≥ 8.11.1
+and Kotlin ≥ 2.2.20 — the app was on 8.12 / 8.9.3 / 2.1.0 and no longer built.
+Now: Gradle 8.14.3, AGP 8.11.1, Kotlin 2.2.20, proven by a local
+`flutter build apk --release`. Flutter 3.47 also rewrites any `minSdk` ≤ 23 to
+its own default on every build, so the app now needs **Android 7.0 (API 24)**;
+phones on Android 6 keep the version they have but get no updates.
+
+**Actions billing (24/10/2026):** jobs are not starting — GitHub reports
+"recent account payments have failed or your spending limit needs to be
+increased". Until that is fixed in GitHub → Settings → Billing, neither CI nor
+the release build runs.
 
 ---
 
@@ -161,7 +180,44 @@ Everything about the **app itself** is in this repo.
 
 ---
 
-## 11. Pending / TODO
+## 11. Page-load safety net (1.0.13, 24/10/2026)
+
+**Why:** a phone opened the app and stayed on a white screen with the progress
+bar frozen at 10 %. The app had no plan for a page that fails: no error
+handling, no time limit, no retry, so any failure looked like that.
+
+**What happens now** ([`webview_screen.dart`](../lib/screens/webview_screen.dart)):
+
+1. On the first launch after updating to 1.0.13 the WebView HTTP cache is
+   cleared once (`kWebViewCacheEpoch`). Only the cache: the login (cookies) and
+   the cart (localStorage) stay. This drops the one-year redirects the website
+   could leave on phones between 21/10 and the fix that removed them.
+2. The app opens `/fr`, `/ar` or `/en` directly (no redirect hop).
+3. A failure is: a network error on the page itself, an HTTP 403/429/5xx on
+   the page itself, or 20 s with nothing visible. A slow page that already
+   shows something is never replaced (once a page is shown, its 20 s
+   deadline is dropped), and the site's own 404 page stays.
+4. The first failure per launch clears the cache and reloads silently. The
+   next one shows "La page ne s'est pas chargée" with **Réessayer** (which
+   clears the cache and reloads again). Offline shows the offline screen and
+   reloads by itself when the network returns.
+5. Every failure, and every recovery, is reported to the website:
+   `POST /api/v1/observability/error` with `scope: 'app'`
+   ([`load_report_service.dart`](../lib/services/load_report_service.dart)).
+   Reports land in the site's system logs as warnings (code
+   `error-boundary:app`). A report that cannot be sent (no network) is kept
+   (the latest only) and sent after the next page that loads.
+
+**Startup:** the shop starts loading before notifications are set up (they
+used to come first and could hold the launch screen on a slow network).
+
+## 12. Testing without a phone
+
+`flutter test` runs [`test/webview_screen_test.dart`](../test/webview_screen_test.dart):
+the real screen against a scripted fake WebView (failed page, blank 403, a page
+that never arrives, offline launch, links). CI runs it on every push.
+
+## 13. Pending / TODO
 
 - [ ] Deep links: add Play signing SHA-256 to website assetlinks + WAF skip rule.
 - [ ] Build the FCM sender (website) to actually send push campaigns.
