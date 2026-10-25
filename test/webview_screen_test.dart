@@ -529,6 +529,33 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a content check answering after the load failed cannot hide the failure',
+    (tester) async {
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch, 'last_locale': 'fr'},
+      );
+      final url = c.loads.single;
+      c.failMainFrame(url); // first failure: silent recovery
+      await tester.pump(const Duration(milliseconds: 50));
+      c.pendingContent = Completer<Object>();
+      c.delegate!.onPageStarted?.call(url);
+      c.delegate!.onPageFinished?.call(url); // its content check now pending
+      c.delegate!.onHttpError?.call(
+        HttpResponseError(
+          request: WebResourceRequest(uri: Uri.parse(url)),
+          response: const WebResourceResponse(uri: null, statusCode: 503),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      c.pendingContent!.complete(1); // late "content visible"
+      c.pendingContent = null;
+      await settle(tester);
+      expect(find.byType(RetryScreen), findsOneWidget);
+    },
+  );
+
   testWidgets('a slow page that already shows content is never replaced', (
     tester,
   ) async {

@@ -35,10 +35,13 @@ class NotificationService {
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
     await _setupLocalNotifications();
-    await _requestPermission();
-    await _registerToken();
+    // Listeners first: the app is on screen while the permission prompt and
+    // the token upload below run, and a message or tap in that window must
+    // not be missed (a background-open tap is not replayed later).
     _listenForegroundMessages();
     _listenNotificationTaps();
+    await _requestPermission();
+    await _registerToken();
   }
 
   static Future<void> _setupLocalNotifications() async {

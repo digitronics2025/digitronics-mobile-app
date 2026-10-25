@@ -15,22 +15,28 @@ class NavigationTracker {
 
   int _id = 0;
   int _failedId = -1;
+  int _generation = 0;
   bool _awaitingStart = false;
   String _target;
   String _requestedPage = '';
   String _startedPage = '';
 
   /// Pages requested earlier and replaced by a newer request before they
-  /// started. A late start for one of them is stale (bounded: cleared when
-  /// the current request starts).
+  /// started. Such a page never committed, so it cannot be in the history and
+  /// any later start for it is stale — even after the newer page started. A
+  /// page leaves the set when it is requested again; the set keeps the most
+  /// recent [_maxSuperseded] entries.
   final Set<String> _supersededPages = <String>{};
+  static const int _maxSuperseded = 8;
 
   /// The page a retry should load: the latest one asked for.
   String get target => _target;
 
-  /// Changes whenever a new navigation opens. An async check (a content
-  /// probe) captures it first and drops its result if it changed meanwhile.
-  int get generation => _id;
+  /// Changes whenever a new navigation opens or the current one fails. An
+  /// async check (a content probe) captures it first and drops its result if
+  /// it changed meanwhile, so a late answer can neither fail a newer page nor
+  /// undo a failure.
+  int get generation => _generation;
 
   /// True between a request and its page's start: the WebView may still be
   /// showing the previous page.
@@ -39,11 +45,19 @@ class NavigationTracker {
   /// A main-frame load of [url] was asked for, by the app (`loadRequest`) or
   /// by the page (a link, a redirect).
   void request(String url) {
-    if (_awaitingStart) _supersededPages.add(_requestedPage);
+    final page = PageLoadPolicy.navigationKey(url);
+    if (_awaitingStart && _requestedPage != page) {
+      _supersededPages.add(_requestedPage);
+      if (_supersededPages.length > _maxSuperseded) {
+        _supersededPages.remove(_supersededPages.first);
+      }
+    }
+    _supersededPages.remove(page); // Asked for again: its start is real.
     _id++;
+    _generation++;
     _awaitingStart = true;
     _target = url;
-    _requestedPage = PageLoadPolicy.navigationKey(url);
+    _requestedPage = page;
   }
 
   /// `onPageStarted`. A start with no request before it (Android does not
@@ -55,16 +69,14 @@ class NavigationTracker {
   void started(String url) {
     final page = PageLoadPolicy.navigationKey(url);
     // A late start for a request that a newer one replaced: not this load.
-    if (_awaitingStart &&
-        page != _requestedPage &&
-        _supersededPages.contains(page)) {
-      return;
-    }
+    if (page != _requestedPage && _supersededPages.contains(page)) return;
     final supersedesFailedRequest =
         _awaitingStart && _failedId == _id && page != _requestedPage;
-    if (!_awaitingStart || supersedesFailedRequest) _id++;
+    if (!_awaitingStart || supersedesFailedRequest) {
+      _id++;
+      _generation++;
+    }
     _awaitingStart = false;
-    _supersededPages.clear();
     _startedPage = page;
     if (url.startsWith('https://')) _target = url;
   }
@@ -91,6 +103,7 @@ class NavigationTracker {
   bool recordFailure() {
     if (_failedId == _id) return false;
     _failedId = _id;
+    _generation++;
     return true;
   }
 }

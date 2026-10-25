@@ -140,6 +140,35 @@ void main() {
     expect(nav.finishedSuccessfully(product), isTrue);
   });
 
+  test('a stale start stays stale even after the newer page started', () {
+    final nav = NavigationTracker(home)
+      ..request(home)
+      ..request(product)
+      ..started(product); // B starts first
+    nav.started(home); // A's start, delivered late
+    expect(nav.target, product);
+    expect(nav.finishedSuccessfully(product), isTrue);
+  });
+
+  test('a page asked for again after being replaced starts normally', () {
+    final nav = NavigationTracker(home)
+      ..request(home)
+      ..request(product)
+      ..started(product)
+      ..request(home);
+    nav.started(home);
+    expect(nav.finishedSuccessfully(home), isTrue);
+  });
+
+  test('a failure moves the generation, so a pending check cannot undo it', () {
+    final nav = NavigationTracker(home)
+      ..request(home)
+      ..started(home);
+    final before = nav.generation;
+    expect(nav.recordFailure(), isTrue);
+    expect(nav.generation, isNot(before));
+  });
+
   test('images and scripts are not the page', () {
     final nav = NavigationTracker(home)
       ..request(home)
