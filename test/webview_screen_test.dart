@@ -62,6 +62,11 @@ class FakeWebViewController extends PlatformWebViewController {
   Object contentResult = 1;
   Completer<Object>? pendingContent;
 
+  /// When true, every check waits on its own completer in [heldChecks], so a
+  /// test can answer concurrent checks in any order.
+  bool holdChecks = false;
+  final List<Completer<Object>> heldChecks = <Completer<Object>>[];
+
   /// The page whose text the check reports when [contentResult] is 1.
   String contentUrl = 'https://digitronics.ma/fr';
 
@@ -85,10 +90,17 @@ class FakeWebViewController extends PlatformWebViewController {
   }
 
   @override
-  Future<Object> runJavaScriptReturningResult(String javaScript) =>
-      (pendingContent?.future ?? Future<Object>.value(contentResult)).then(
-        _asScriptResult,
-      );
+  Future<Object> runJavaScriptReturningResult(String javaScript) {
+    if (holdChecks) {
+      final held = Completer<Object>();
+      heldChecks.add(held);
+      return held.future.then(_asScriptResult);
+    }
+    return (pendingContent?.future ?? Future<Object>.value(contentResult)).then(
+      _asScriptResult,
+    );
+  }
+
   bool hasHistory = false;
   int backs = 0;
 
@@ -887,6 +899,63 @@ void main() {
     c.delegate!.onProgress!(40); // late partial progress of the same load
     await tester.pump();
     expect(find.byType(LinearProgressIndicator), findsNothing);
+    await settle(tester);
+  });
+
+  testWidgets(
+    'checks still in flight when a page is accepted drop their result',
+    (tester) async {
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+      );
+      c.succeed(c.loads.single);
+      await settle(tester);
+      const next = 'https://digitronics.ma/fr/promotions';
+      await c.delegate!.onNavigationRequest!(
+        const NavigationRequest(url: next, isMainFrame: true),
+      );
+      c.contentUrl = next;
+      c.holdChecks = true; // each check is answered within its 3 s timeout
+      c.delegate!.onPageStarted!(next);
+      await tester.pump(const Duration(milliseconds: 3010)); // the blank check
+      expect(c.heldChecks.length, 1);
+      c.heldChecks[0].complete(1);
+      await tester.pump(const Duration(seconds: 17)); // the deadline fires
+      expect(c.heldChecks.length, 2);
+      c.delegate!.onPageFinished!(next);
+      await tester.pump();
+      expect(c.heldChecks.length, 3);
+      c.heldChecks[2].complete(1); // the finish sees content: accepted
+      await tester.pump();
+      c.heldChecks[1].complete(0); // the deadline's check: momentarily empty
+      await tester.pump();
+      expect(c.cacheClears, 0, reason: 'the shown page is not recovered');
+      expect(find.byType(LoadingScreen), findsNothing);
+      expect(find.byType(RetryScreen), findsNothing);
+      c.holdChecks = false;
+      await settle(tester);
+    },
+  );
+
+  testWidgets('a page accepted without a finish still sets the language', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch, 'last_locale': 'fr'},
+    );
+    c.succeed(c.loads.single);
+    await settle(tester);
+    const next = 'https://digitronics.ma/ar/promotions';
+    await c.delegate!.onNavigationRequest!(
+      const NavigationRequest(url: next, isMainFrame: true),
+    );
+    c.contentUrl = next;
+    c.delegate!.onPageStarted!(next); // shows content, never finishes
+    await tester.pump(const Duration(seconds: 21)); // the deadline accepts it
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('last_locale'), 'ar');
     await settle(tester);
   });
 

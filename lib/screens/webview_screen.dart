@@ -47,7 +47,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   double _progress = 0;
 
-  /// The navigation whose content was accepted ([_markPageShown]). Its late
+  /// The navigation whose content was accepted ([_acceptPage]). Its late
   /// partial progress is ignored, so a page that shows content but never
   /// finishes does not keep a frozen bar.
   int? _shownGeneration;
@@ -246,9 +246,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _blankCheck?.cancel();
     final generation = _nav.generation;
     _blankCheck = Timer(PageLoadPolicy.blankCheckDelay, () async {
-      if (generation != _nav.generation || _loadFailed) return;
-      final hasContent = await _pageHasContent();
-      if (hasContent || generation != _nav.generation || !mounted) return;
+      if (!_stillPending(generation) || _loadFailed) return;
+      final contentUrl = await _visibleContentUrl();
+      if (contentUrl != null || !_stillPending(generation)) return;
       setState(() => _coverBlankPage = true);
       _startContentProbe();
     });
@@ -256,17 +256,17 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   void _onPageFinished(String url) {
     if (!_nav.finishedSuccessfully(url)) return;
-    unawaited(_confirmFinishedPage(url));
+    unawaited(_confirmFinishedPage());
   }
 
   /// A nominal finish is not proof: an empty 200 or a page whose scripts died
   /// "finishes" too. Only visible content counts; otherwise the watchdog stays
   /// armed and treats the page as failed when it fires.
-  Future<void> _confirmFinishedPage(String url) async {
+  Future<void> _confirmFinishedPage() async {
     final generation = _nav.generation;
-    final hasContent = await _pageHasContent();
-    if (generation != _nav.generation || !mounted) return; // Superseded.
-    if (!hasContent) {
+    final contentUrl = await _visibleContentUrl();
+    if (!_stillPending(generation)) return;
+    if (contentUrl == null) {
       if (!(_loadWatchdog?.isActive ?? false)) _armWatchdog();
       // The committed document is blank: cover it (on any navigation, not
       // only the first) until content appears or the load fails.
@@ -274,13 +274,43 @@ class _WebViewScreenState extends State<WebViewScreen> {
       _startContentProbe();
       return;
     }
-    _markPageShown();
+    _acceptPage(contentUrl);
+  }
 
+  /// Whether a check started for navigation [generation] may still act: the
+  /// navigation is current and its content has not been accepted yet. Every
+  /// check awaits the WebView, so each re-asks this after the await — a check
+  /// in flight when the page was accepted (or replaced) drops its result.
+  bool _stillPending(int generation) =>
+      mounted &&
+      generation == _nav.generation &&
+      _shownGeneration != generation;
+
+  /// The one place a page is accepted as shown, whichever check saw it first
+  /// (the finish, the content probe, or the load deadline). [url] is the page
+  /// the content check saw.
+  void _acceptPage(String url) {
+    _loadWatchdog?.cancel();
+    _blankCheck?.cancel();
+    _contentProbe?.cancel();
+    _pageEverShown = true;
+    _shownGeneration = _nav.generation;
     final locale = AppUrls.localeOf(Uri.parse(url));
     if (locale != null && locale != _locale) {
       _prefs?.setString(_lastLocaleKey, locale);
-      if (mounted) setState(() => _locale = locale);
     }
+    // A page is on screen and usable (possibly from cache while offline), so
+    // neither the retry nor the offline screen may keep covering it. The
+    // connectivity state itself is left alone: links tapped meanwhile still
+    // queue, and the real reconnect still fires.
+    setState(() {
+      if (locale != null) _locale = locale;
+      _loadFailed = false;
+      _coverBlankPage = false;
+      _progress = 1.0;
+      if (_isOffline) _cachedPageWhileOffline = true;
+    });
+    _maybeHideSplash();
 
     if (_consecutiveFailures > 0) {
       LoadReportService.report(
@@ -292,30 +322,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
       _consecutiveFailures = 0;
     }
     unawaited(LoadReportService.flushPending());
-  }
-
-  /// Every route that accepts content ends here, so the load deadline and
-  /// the blank check go with it: a page already shown must not be covered or
-  /// failed later by a check that times out or catches a momentarily empty
-  /// body.
-  void _markPageShown() {
-    _loadWatchdog?.cancel();
-    _blankCheck?.cancel();
-    _contentProbe?.cancel();
-    _pageEverShown = true;
-    if (!mounted) return;
-    // A page is on screen and usable (possibly from cache while offline), so
-    // neither the retry nor the offline screen may keep covering it. The
-    // connectivity state itself is left alone: links tapped meanwhile still
-    // queue, and the real reconnect still fires.
-    _shownGeneration = _nav.generation;
-    setState(() {
-      _loadFailed = false;
-      _coverBlankPage = false;
-      _progress = 1.0;
-      if (_isOffline) _cachedPageWhileOffline = true;
-    });
-    _maybeHideSplash();
   }
 
   void _onWebResourceError(WebResourceError error) {
@@ -350,12 +356,13 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   Future<void> _onLoadTimeout() async {
     final generation = _nav.generation;
-    final hasContent = await _pageHasContent();
-    // A navigation that opened while the check ran is not this one's to fail.
-    if (generation != _nav.generation || !mounted) return;
+    final contentUrl = await _visibleContentUrl();
+    // A navigation that opened, or content accepted, while the check ran is
+    // not this check's to fail.
+    if (!_stillPending(generation)) return;
     // A slow page that already shows something is left alone.
-    if (hasContent) {
-      _markPageShown();
+    if (contentUrl != null) {
+      _acceptPage(contentUrl);
       return;
     }
     _fail(
@@ -367,18 +374,20 @@ class _WebViewScreenState extends State<WebViewScreen> {
     );
   }
 
-  /// Whether the WebView shows content of the navigation being tracked.
-  /// While the requested page has not started, the WebView may still show
-  /// the previous page; its text only counts if it IS the requested page.
-  Future<bool> _pageHasContent() async {
+  /// The URL of the page on screen when it shows content of the navigation
+  /// being tracked, else null. While the requested page has not started, the
+  /// WebView may still show the previous page; its text only counts if it IS
+  /// the requested page.
+  Future<String?> _visibleContentUrl() async {
     try {
       final result = await _controller
           .runJavaScriptReturningResult(PageLoadPolicy.contentCheckScript)
           .timeout(PageLoadPolicy.contentCheckTimeout);
       final url = PageLoadPolicy.contentPageUrl(result);
-      return url != null && (!_nav.awaitingStart || _nav.isCurrentPage(url));
+      if (url == null) return null;
+      return (!_nav.awaitingStart || _nav.isCurrentPage(url)) ? url : null;
     } catch (_) {
-      return false; // A renderer that cannot answer shows nothing useful.
+      return null; // A renderer that cannot answer shows nothing useful.
     }
   }
 
@@ -394,8 +403,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
         return;
       }
       final generation = _nav.generation;
-      final hasContent = await _pageHasContent();
-      if (hasContent && generation == _nav.generation) _markPageShown();
+      final contentUrl = await _visibleContentUrl();
+      if (contentUrl != null && _stillPending(generation)) {
+        _acceptPage(contentUrl);
+      }
     });
   }
 
@@ -429,7 +440,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   Future<void> _clearCacheAndReload() async {
     // The failed page (blank, or WebView's own error page) stays covered by
     // the loading screen through the cache clear and the reload, until the
-    // reloaded page shows content (_markPageShown) or fails again.
+    // reloaded page shows content (_acceptPage) or fails again.
     if (mounted) setState(() => _coverBlankPage = true);
     final generation = _nav.generation;
     try {
@@ -531,7 +542,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
         if (didPop) return;
         // Back always tries the WebView history first, also from the retry or
         // offline screen: the previous page is usually still usable, and its
-        // successful load clears the overlay (_markPageShown).
+        // successful load clears the overlay (_acceptPage).
         if (await _controller.canGoBack()) {
           _nav.historyRequested();
           await _controller.goBack();
