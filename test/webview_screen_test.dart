@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart' show LinearProgressIndicator;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -23,6 +24,7 @@ class FakeNavigationDelegate extends PlatformNavigationDelegate {
   WebResourceErrorCallback? onWebResourceError;
   HttpResponseErrorCallback? onHttpError;
   NavigationRequestCallback? onNavigationRequest;
+  ProgressCallback? onProgress;
 
   @override
   Future<void> setOnPageStarted(PageEventCallback cb) async =>
@@ -31,7 +33,7 @@ class FakeNavigationDelegate extends PlatformNavigationDelegate {
   Future<void> setOnPageFinished(PageEventCallback cb) async =>
       onPageFinished = cb;
   @override
-  Future<void> setOnProgress(ProgressCallback cb) async {}
+  Future<void> setOnProgress(ProgressCallback cb) async => onProgress = cb;
   @override
   Future<void> setOnWebResourceError(WebResourceErrorCallback cb) async =>
       onWebResourceError = cb;
@@ -51,6 +53,9 @@ class FakeWebViewController extends PlatformWebViewController {
   FakeNavigationDelegate? delegate;
   final List<String> loads = <String>[];
   int cacheClears = 0;
+
+  /// Set to hold [clearCache] open.
+  Completer<void>? pendingClear;
 
   /// What the "is anything on screen?" check answers; real shop pages have
   /// text. Set [pendingContent] to hold the answer back.
@@ -74,7 +79,11 @@ class FakeWebViewController extends PlatformWebViewController {
   Future<void> loadRequest(LoadRequestParams params) async =>
       loads.add(params.uri.toString());
   @override
-  Future<void> clearCache() async => cacheClears++;
+  Future<void> clearCache() async {
+    cacheClears++;
+    await pendingClear?.future;
+  }
+
   @override
   Future<Object> runJavaScriptReturningResult(String javaScript) =>
       (pendingContent?.future ?? Future<Object>.value(contentResult)).then(
@@ -853,6 +862,63 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
       expect(c.loads.last, 'https://digitronics.ma/fr/produit/tv-50');
       expect(c.loads.length, 2);
+      await settle(tester);
+    },
+  );
+
+  testWidgets('a page accepted without a finish does not keep a frozen bar', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+    );
+    c.succeed(c.loads.single);
+    c.delegate!.onProgress!(100);
+    await settle(tester);
+    const next = 'https://digitronics.ma/fr/promotions';
+    await c.delegate!.onNavigationRequest!(
+      const NavigationRequest(url: next, isMainFrame: true),
+    );
+    c.delegate!.onPageStarted!(next); // shows content, never finishes
+    c.delegate!.onProgress!(10);
+    c.contentUrl = next;
+    await tester.pump(const Duration(seconds: 21)); // the watchdog accepts it
+    c.delegate!.onProgress!(40); // late partial progress of the same load
+    await tester.pump();
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    await settle(tester);
+  });
+
+  testWidgets(
+    'a newer page opened during the cache clear is not reloaded over',
+    (tester) async {
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+      );
+      c.succeed(c.loads.single);
+      await settle(tester);
+      const next = 'https://digitronics.ma/fr/promotions';
+      await c.delegate!.onNavigationRequest!(
+        const NavigationRequest(url: next, isMainFrame: true),
+      );
+      c.pendingClear = Completer<void>();
+      c.failMainFrame(next); // first failure: silent cache clear starts
+      await tester.pump();
+      expect(c.cacheClears, 1);
+      PendingLink.offer('/fr/produit/tv-50'); // a notification tapped meanwhile
+      await tester.pump();
+      expect(c.loads.last, 'https://digitronics.ma/fr/produit/tv-50');
+      final loadsBefore = c.loads.length;
+      c.pendingClear!.complete();
+      await tester.pump();
+      expect(
+        c.loads.length,
+        loadsBefore,
+        reason: 'the link is not interrupted',
+      );
+      c.succeed(c.loads.last);
       await settle(tester);
     },
   );

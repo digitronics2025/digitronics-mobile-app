@@ -46,6 +46,11 @@ class _WebViewScreenState extends State<WebViewScreen> {
   AppStrings get _strings => AppStrings.of(_locale);
 
   double _progress = 0;
+
+  /// The navigation whose content was accepted ([_markPageShown]). Its late
+  /// partial progress is ignored, so a page that shows content but never
+  /// finishes does not keep a frozen bar.
+  int? _shownGeneration;
   bool _isOffline = false;
   bool _loadFailed = false;
   bool _pageEverShown = false;
@@ -103,7 +108,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
         NavigationDelegate(
           onPageStarted: _onPageStarted,
           onProgress: (int progress) {
-            if (!mounted) return;
+            if (!mounted || _nav.generation == _shownGeneration) return;
             setState(() => _progress = progress / 100);
           },
           onPageFinished: _onPageFinished,
@@ -303,9 +308,11 @@ class _WebViewScreenState extends State<WebViewScreen> {
     // neither the retry nor the offline screen may keep covering it. The
     // connectivity state itself is left alone: links tapped meanwhile still
     // queue, and the real reconnect still fires.
+    _shownGeneration = _nav.generation;
     setState(() {
       _loadFailed = false;
       _coverBlankPage = false;
+      _progress = 1.0;
       if (_isOffline) _cachedPageWhileOffline = true;
     });
     _maybeHideSplash();
@@ -424,12 +431,15 @@ class _WebViewScreenState extends State<WebViewScreen> {
     // the loading screen through the cache clear and the reload, until the
     // reloaded page shows content (_markPageShown) or fails again.
     if (mounted) setState(() => _coverBlankPage = true);
+    final generation = _nav.generation;
     try {
       await _controller.clearCache();
     } catch (_) {
       // Reload anyway.
     }
-    if (!mounted) return;
+    // A newer navigation (Back, a link once online) opened meanwhile: it owns
+    // the screen now, and reloading would interrupt it.
+    if (!mounted || generation != _nav.generation) return;
     // A link queued while offline wins; otherwise the page that failed, not
     // the one before it.
     final queued = _queuedLink;
