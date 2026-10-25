@@ -169,6 +169,15 @@ void main() {
     expect(nav.generation, isNot(before));
   });
 
+  test('Back moves the generation before its page starts', () {
+    final nav = NavigationTracker(home)
+      ..request(home)
+      ..started(home);
+    final before = nav.generation;
+    nav.historyRequested();
+    expect(nav.generation, isNot(before));
+  });
+
   test('Back to an older visit of a replaced address is still tracked', () {
     const promotions = 'https://digitronics.ma/fr/promotions';
     final nav = NavigationTracker(home)

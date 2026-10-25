@@ -448,9 +448,15 @@ class _WebViewScreenState extends State<WebViewScreen> {
     } catch (_) {
       // Reload anyway.
     }
+    if (!mounted) return;
     // A newer navigation (Back, a link once online) opened meanwhile: it owns
-    // the screen now, and reloading would interrupt it.
-    if (!mounted || generation != _nav.generation) return;
+    // the screen now, and reloading would interrupt it. The cover stays until
+    // that page shows content, which the probe watches for even if it never
+    // reports a finish.
+    if (generation != _nav.generation) {
+      if (_coverBlankPage) _startContentProbe();
+      return;
+    }
     // A link queued while offline wins; otherwise the page that failed, not
     // the one before it.
     final queued = _queuedLink;

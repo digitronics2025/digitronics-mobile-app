@@ -992,6 +992,55 @@ void main() {
     },
   );
 
+  testWidgets('Back during the cache clear is not interrupted by its reload', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+    );
+    c.succeed(c.loads.single);
+    await settle(tester);
+    c.hasHistory = true;
+    c.pendingClear = Completer<void>();
+    c.failMainFrame('https://digitronics.ma/fr/produit/tv'); // cache clear
+    await tester.pump();
+    await tester.binding.handlePopRoute(); // Back before the clear ends
+    await tester.pump();
+    expect(c.backs, 1);
+    final loadsBefore = c.loads.length;
+    c.pendingClear!.complete();
+    await tester.pump();
+    expect(c.loads.length, loadsBefore, reason: 'Back is not reloaded over');
+    c.succeed('https://digitronics.ma/fr');
+    await settle(tester);
+    expect(find.byType(LoadingScreen), findsNothing);
+  });
+
+  testWidgets('a page that takes over during the cache clear is uncovered', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+    );
+    c.succeed(c.loads.single);
+    await settle(tester);
+    c.pendingClear = Completer<void>();
+    c.failMainFrame('https://digitronics.ma/fr/promotions'); // cache clear
+    await tester.pump();
+    PendingLink.offer('/fr/produit/tv-50');
+    await tester.pump();
+    c.pendingClear!.complete();
+    await tester.pump();
+    const link = 'https://digitronics.ma/fr/produit/tv-50';
+    c.contentUrl = link;
+    c.delegate!.onPageStarted!(link); // paints, never reports a finish
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.byType(LoadingScreen), findsNothing);
+    await settle(tester);
+  });
+
   testWidgets('a bare-domain App Link opens home in the shopper\'s language', (
     tester,
   ) async {

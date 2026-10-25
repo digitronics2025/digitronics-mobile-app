@@ -117,8 +117,13 @@ class NavigationTracker {
 
   /// The app is about to go Back (`goBack()`): the next start is a history
   /// navigation and must be tracked even if its URL matches a replaced
-  /// request.
-  void historyRequested() => _expectHistoryStart = true;
+  /// request. The generation moves now, not at that start, so work pending
+  /// for the page being left (a cache-clear reload, a content check) stops
+  /// before it can interrupt the Back.
+  void historyRequested() {
+    _expectHistoryStart = true;
+    _generation++;
+  }
 
   /// Record that the current navigation failed. False when it was already
   /// recorded, so one navigation is handled once.
