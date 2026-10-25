@@ -57,6 +57,13 @@ class FakeWebViewController extends PlatformWebViewController {
   Object contentResult = 1;
   Completer<Object>? pendingContent;
 
+  /// The page whose text the check reports when [contentResult] is 1.
+  String contentUrl = 'https://digitronics.ma/fr';
+
+  /// Android returns a JavaScript string JSON-quoted.
+  Object _asScriptResult(Object v) =>
+      v == 1 ? '"$contentUrl"' : (v == 0 ? '""' : v);
+
   @override
   Future<void> setJavaScriptMode(JavaScriptMode mode) async {}
   @override
@@ -70,7 +77,9 @@ class FakeWebViewController extends PlatformWebViewController {
   Future<void> clearCache() async => cacheClears++;
   @override
   Future<Object> runJavaScriptReturningResult(String javaScript) =>
-      pendingContent?.future ?? Future<Object>.value(contentResult);
+      (pendingContent?.future ?? Future<Object>.value(contentResult)).then(
+        _asScriptResult,
+      );
   bool hasHistory = false;
   int backs = 0;
 
@@ -446,6 +455,75 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
       expect(c.loads.last, 'https://digitronics.ma/fr/produit/tv-50');
       c.succeed(c.loads.last);
+      await settle(tester);
+      await events.close();
+    },
+  );
+
+  testWidgets(
+    'the old page still on screen does not pass for a stalled new page',
+    (tester) async {
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+      );
+      final home = c.loads.single;
+      c.succeed(home);
+      await settle(tester);
+      c.contentUrl = home; // the WebView keeps showing home's text
+      await c.delegate!.onNavigationRequest!(
+        const NavigationRequest(
+          url: 'https://digitronics.ma/fr/promotions',
+          isMainFrame: true,
+        ),
+      );
+      await tester.pump(const Duration(seconds: 21)); // never commits
+      expect(
+        c.cacheClears,
+        1,
+        reason: 'the stalled page failed and was retried',
+      );
+      expect(c.loads.last, 'https://digitronics.ma/fr/promotions');
+      c.succeed(c.loads.last);
+      await settle(tester);
+    },
+  );
+
+  testWidgets(
+    'a connection event during startup wins over an older offline snapshot',
+    (tester) async {
+      final gate = Completer<List<String>>();
+      final events = StreamController<List<String>>.broadcast();
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        _connectivityMethod,
+        (call) => gate.future,
+      );
+      messenger.setMockStreamHandler(
+        _connectivityEvents,
+        MockStreamHandler.inline(
+          onListen: (_, sink) {
+            events.stream.listen(sink.success);
+          },
+        ),
+      );
+      SharedPreferences.setMockInitialValues({
+        'webview_cache_epoch': kWebViewCacheEpoch,
+      });
+      await tester.pumpWidget(const DigitronicsApp());
+      await tester.pump(const Duration(milliseconds: 50));
+      final c = platform.controller!;
+      events.add(['wifi']); // the network came back while startup checked
+      await tester.pump(const Duration(milliseconds: 50));
+      gate.complete(['none']); // the snapshot taken earlier said offline
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(
+        c.loads.length,
+        1,
+        reason: 'the page loads, no stuck offline screen',
+      );
+      c.succeed(c.loads.single);
       await settle(tester);
       await events.close();
     },

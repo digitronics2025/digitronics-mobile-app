@@ -127,6 +127,19 @@ void main() {
     expect(nav.finishedSuccessfully(home), isTrue);
   });
 
+  test('a late start for a request a newer one replaced is ignored', () {
+    final nav = NavigationTracker(home)
+      ..request(home)
+      ..request(product); // a notification arrives before home started
+    nav.started(home); // home's start, delivered late
+    expect(nav.awaitingStart, isTrue, reason: 'still waiting for the product');
+    expect(nav.target, product);
+    expect(nav.finishedSuccessfully(home), isFalse);
+    expect(nav.isCurrentPage(productPage), isTrue);
+    nav.started(product);
+    expect(nav.finishedSuccessfully(product), isTrue);
+  });
+
   test('images and scripts are not the page', () {
     final nav = NavigationTracker(home)
       ..request(home)
@@ -135,6 +148,9 @@ void main() {
       nav.isCurrentPage('https://digitronics.ma/r2/products/x.webp'),
       isFalse,
     );
-    expect(nav.isCurrentPage('https://digitronics.ma/fr?utm_source=fb'), isTrue);
+    expect(
+      nav.isCurrentPage('https://digitronics.ma/fr?utm_source=fb'),
+      isTrue,
+    );
   });
 }

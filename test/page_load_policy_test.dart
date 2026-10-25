@@ -62,11 +62,23 @@ void main() {
     }
   });
 
-  test('hasContent reads the script result whatever its runtime type', () {
-    expect(PageLoadPolicy.hasContent(1), isTrue);
-    expect(PageLoadPolicy.hasContent('1'), isTrue);
-    expect(PageLoadPolicy.hasContent(0), isFalse);
-    expect(PageLoadPolicy.hasContent(null), isFalse);
+  test('contentPageUrl decodes the JSON-quoted string Android returns', () {
+    expect(
+      PageLoadPolicy.contentPageUrl('"https://digitronics.ma/fr"'),
+      'https://digitronics.ma/fr',
+    );
+    expect(
+      PageLoadPolicy.contentPageUrl('https://digitronics.ma/fr'),
+      'https://digitronics.ma/fr',
+    );
+    expect(PageLoadPolicy.contentPageUrl('""'), isNull);
+    expect(PageLoadPolicy.contentPageUrl(''), isNull);
+    expect(
+      PageLoadPolicy.contentPageUrl('"chrome-error://chromewebdata/"'),
+      isNull,
+    );
+    expect(PageLoadPolicy.contentPageUrl(1), isNull);
+    expect(PageLoadPolicy.contentPageUrl(null), isNull);
   });
 
   test('the content check never counts the WebView error page', () {

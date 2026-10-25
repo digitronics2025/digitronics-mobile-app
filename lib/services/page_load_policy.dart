@@ -5,6 +5,8 @@
 /// screen with the progress bar frozen at 10 % and no way out (October 2026).
 library;
 
+import 'dart:convert';
+
 enum LoadFailureKind { network, http, timeout }
 
 class LoadFailure {
@@ -36,11 +38,24 @@ class PageLoadPolicy {
   /// Script returning 1 when a real https page has visible text, else 0.
   /// WebView's own error page lives at `chrome-error://`, so it never counts.
   static const String contentCheckScript =
-      "(location.protocol === 'https:' && document.body && document.body.innerText.trim().length > 0) ? 1 : 0";
+      "(location.protocol === 'https:' && document.body && document.body.innerText.trim().length > 0) ? location.href : ''";
 
-  /// True when `runJavaScriptReturningResult` reported visible content. The
-  /// result arrives as a num on Android, but the API only promises Object.
-  static bool hasContent(Object? result) => result?.toString().trim() == '1';
+  /// The URL of the page whose content the check saw, or null when nothing
+  /// is visible. Android hands a JavaScript string back still JSON-quoted
+  /// (`"https://…"`), so the quotes are decoded here.
+  static String? contentPageUrl(Object? result) {
+    if (result is! String) return null;
+    var value = result.trim();
+    if (value.startsWith('"')) {
+      try {
+        final decoded = jsonDecode(value);
+        value = decoded is String ? decoded : '';
+      } catch (_) {
+        return null;
+      }
+    }
+    return value.startsWith('https://') ? value : null;
+  }
 
   /// A main-frame network error ends the load. `ERR_ABORTED` is a navigation
   /// the page or the shopper replaced (or a download), not a failure;

@@ -69,6 +69,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
   /// A page asked for while offline (the first page, or a tapped link): the
   /// next reconnect or Retry opens it instead of dropping it.
   String? _queuedLink;
+
+  /// The latest connectivity event received before startup finished, if any.
+  bool? _startupConnectivityOffline;
   bool _autoRecoveryUsed = false;
   Timer? _loadWatchdog;
   Timer? _contentProbe;
@@ -149,8 +152,11 @@ class _WebViewScreenState extends State<WebViewScreen> {
       }
     }
 
-    final offline = await _connectivityIsNone();
+    final snapshotOffline = await _connectivityIsNone();
     if (!mounted) return;
+    // A connectivity event delivered while startup ran is newer than (or as
+    // new as) the snapshot taken above, and its transition is not repeated.
+    final offline = _startupConnectivityOffline ?? snapshotOffline;
     // Only now does startup stop deferring links to itself: one tapped while
     // the checks above ran is taken here, never overwritten by the home page.
     _started = true;
@@ -303,12 +309,16 @@ class _WebViewScreenState extends State<WebViewScreen> {
     );
   }
 
+  /// Whether the WebView shows content of the navigation being tracked.
+  /// While the requested page has not started, the WebView may still show
+  /// the previous page; its text only counts if it IS the requested page.
   Future<bool> _pageHasContent() async {
     try {
       final result = await _controller
           .runJavaScriptReturningResult(PageLoadPolicy.contentCheckScript)
           .timeout(PageLoadPolicy.contentCheckTimeout);
-      return PageLoadPolicy.hasContent(result);
+      final url = PageLoadPolicy.contentPageUrl(result);
+      return url != null && (!_nav.awaitingStart || _nav.isCurrentPage(url));
     } catch (_) {
       return false; // A renderer that cannot answer shows nothing useful.
     }
@@ -389,9 +399,13 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   void _onConnectivityChanged(List<ConnectivityResult> result) {
     final offline = result.contains(ConnectivityResult.none);
+    if (!_started) {
+      _startupConnectivityOffline = offline; // _start() applies the latest.
+      return;
+    }
     if (offline == _isOffline || !mounted) return;
     setState(() => _isOffline = offline);
-    if (offline || !_started) return;
+    if (offline) return;
     // Back online: open a link tapped while offline, else reload only what
     // never loaded. A page already on screen (a shopper mid-checkout) is left
     // as it is.
