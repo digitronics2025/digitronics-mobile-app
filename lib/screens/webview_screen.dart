@@ -437,12 +437,14 @@ class _WebViewScreenState extends State<WebViewScreen> {
     });
   }
 
-  Future<void> _clearCacheAndReload() async {
+  /// [generation] is the navigation the recovery was started for (Retry
+  /// captures it before its own await); a newer one cancels the reload.
+  Future<void> _clearCacheAndReload([int? generation]) async {
+    generation ??= _nav.generation;
     // The failed page (blank, or WebView's own error page) stays covered by
     // the loading screen through the cache clear and the reload, until the
     // reloaded page shows content (_acceptPage) or fails again.
     if (mounted) setState(() => _coverBlankPage = true);
-    final generation = _nav.generation;
     try {
       await _controller.clearCache();
     } catch (_) {
@@ -465,6 +467,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   }
 
   Future<void> _retry() async {
+    final generation = _nav.generation;
     final eventsBefore = _connectivityEventCount;
     final snapshotOffline = await _connectivityIsNone();
     // An event delivered while the snapshot was taken is at least as new and
@@ -481,14 +484,16 @@ class _WebViewScreenState extends State<WebViewScreen> {
       }
       return;
     }
-    if (!mounted) return;
+    // Back (or a link) during the snapshot opened a newer navigation: Retry
+    // must not reload the failed page over it.
+    if (!mounted || generation != _nav.generation) return;
     setState(() {
       _isOffline = false;
       _loadFailed = false;
       _progress = 0;
     });
     if (!_pageEverShown) _startContentProbe();
-    await _clearCacheAndReload();
+    await _clearCacheAndReload(generation);
   }
 
   void _onConnectivityChanged(List<ConnectivityResult> result) {

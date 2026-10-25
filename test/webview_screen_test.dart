@@ -1041,6 +1041,40 @@ void main() {
     await settle(tester);
   });
 
+  testWidgets('Back while Retry checks the connection cancels the Retry', (
+    tester,
+  ) async {
+    final c = await launch(
+      tester,
+      prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+    );
+    const product = 'https://digitronics.ma/fr/produit/tv';
+    c.succeed(c.loads.single);
+    await settle(tester);
+    c.hasHistory = true;
+    c.failMainFrame(product); // silent recovery
+    await tester.pump(const Duration(milliseconds: 50));
+    c.failMainFrame(product); // retry screen
+    await settle(tester);
+    final gate = Completer<List<String>>();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_connectivityMethod, (call) => gate.future);
+    await tester.tap(find.text('Réessayer'));
+    await tester.pump();
+    await tester.binding.handlePopRoute(); // Back before the check answers
+    await tester.pump();
+    expect(c.backs, 1);
+    final loadsBefore = c.loads.length;
+    final clearsBefore = c.cacheClears;
+    gate.complete(['wifi']);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(c.loads.length, loadsBefore, reason: 'Back is not undone');
+    expect(c.cacheClears, clearsBefore);
+    c.succeed('https://digitronics.ma/fr');
+    await settle(tester);
+    expect(find.byType(RetryScreen), findsNothing);
+  });
+
   testWidgets('a bare-domain App Link opens home in the shopper\'s language', (
     tester,
   ) async {
