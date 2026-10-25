@@ -117,6 +117,16 @@ void main() {
     expect(nav.generation, isNot(first));
   });
 
+  test('Back after a request failed before starting is a fresh navigation', () {
+    final nav = NavigationTracker(home)
+      ..request(home)
+      ..started(home)
+      ..request(product);
+    expect(nav.recordFailure(), isTrue); // failed before onPageStarted
+    nav.started(home); // Back: Android starts the history page, no request
+    expect(nav.finishedSuccessfully(home), isTrue);
+  });
+
   test('images and scripts are not the page', () {
     final nav = NavigationTracker(home)
       ..request(home)

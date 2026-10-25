@@ -145,13 +145,13 @@ class _WebViewScreenState extends State<WebViewScreen> {
       }
     }
 
+    final offline = await _connectivityIsNone();
+    if (!mounted) return;
+    // Only now does startup stop deferring links to itself: one tapped while
+    // the checks above ran is taken here, never overwritten by the home page.
     _started = true;
     final firstPage = PendingLink.take() ?? AppUrls.homeFor(_locale);
-    if (!mounted) return;
-    setState(() {});
-
-    if (await _connectivityIsNone()) {
-      if (!mounted) return;
+    if (offline) {
       setState(() {
         _isOffline = true;
         _showSplash = false;
@@ -159,6 +159,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
       _nav.request(firstPage); // What _onConnectivityChanged will load.
       return; // _onConnectivityChanged loads the page once a network appears.
     }
+    setState(() {});
     _load(firstPage);
   }
 
@@ -392,7 +393,12 @@ class _WebViewScreenState extends State<WebViewScreen> {
   void _onPendingLink() {
     if (!_started) return; // _start() takes it for the first page.
     final url = PendingLink.take();
-    if (url != null) _load(url);
+    if (url == null) return;
+    if (_isOffline) {
+      _nav.request(url); // Loaded by _onConnectivityChanged when back online.
+      return;
+    }
+    _load(url);
   }
 
   void _maybeHideSplash() {

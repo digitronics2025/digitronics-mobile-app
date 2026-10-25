@@ -396,6 +396,28 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a link tapped while startup checks the connection is the page opened',
+    (tester) async {
+      final gate = Completer<List<String>>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_connectivityMethod, (call) => gate.future);
+      SharedPreferences.setMockInitialValues({
+        'webview_cache_epoch': kWebViewCacheEpoch,
+      });
+      await tester.pumpWidget(const DigitronicsApp());
+      await tester.pump(const Duration(milliseconds: 50));
+      final c = platform.controller!;
+      PendingLink.offer('/fr/produit/tv-50'); // App Link arrives mid-check
+      await tester.pump(const Duration(milliseconds: 50));
+      gate.complete(['wifi']);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(c.loads, ['https://digitronics.ma/fr/produit/tv-50']);
+      c.succeed(c.loads.single);
+      await settle(tester);
+    },
+  );
+
   testWidgets('a slow page that already shows content is never replaced', (
     tester,
   ) async {

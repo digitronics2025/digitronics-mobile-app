@@ -37,11 +37,17 @@ class NavigationTracker {
   }
 
   /// `onPageStarted`. A start with no request before it (Android does not
-  /// always ask first, e.g. history navigation) opens its own navigation.
+  /// always ask first, e.g. history navigation) opens its own navigation —
+  /// also when the awaited request already failed and a different page starts
+  /// (Back from the retry screen), so the failed request's mark never sticks
+  /// to it. The failed request's own late start stays failed.
   void started(String url) {
-    if (!_awaitingStart) _id++;
+    final page = PageLoadPolicy.navigationKey(url);
+    final supersedesFailedRequest =
+        _awaitingStart && _failedId == _id && page != _requestedPage;
+    if (!_awaitingStart || supersedesFailedRequest) _id++;
     _awaitingStart = false;
-    _startedPage = PageLoadPolicy.navigationKey(url);
+    _startedPage = page;
     if (url.startsWith('https://')) _target = url;
   }
 
