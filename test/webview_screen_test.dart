@@ -418,6 +418,39 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a link tapped while offline opens when the connection comes back',
+    (tester) async {
+      final events = StreamController<List<String>>.broadcast();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockStreamHandler(
+            _connectivityEvents,
+            MockStreamHandler.inline(
+              onListen: (_, sink) {
+                events.stream.listen(sink.success);
+              },
+            ),
+          );
+      final c = await launch(
+        tester,
+        prefs: {'webview_cache_epoch': kWebViewCacheEpoch},
+      );
+      c.succeed(c.loads.single);
+      await settle(tester);
+      events.add(['none']);
+      await tester.pump(const Duration(milliseconds: 50));
+      PendingLink.offer('/fr/produit/tv-50'); // notification tapped offline
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(c.loads.length, 1, reason: 'nothing loads into no network');
+      events.add(['wifi']);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(c.loads.last, 'https://digitronics.ma/fr/produit/tv-50');
+      c.succeed(c.loads.last);
+      await settle(tester);
+      await events.close();
+    },
+  );
+
   testWidgets('a slow page that already shows content is never replaced', (
     tester,
   ) async {

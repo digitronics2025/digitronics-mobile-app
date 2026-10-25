@@ -65,6 +65,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
     AppUrls.homeFor(AppUrls.defaultLocale),
   );
   int _consecutiveFailures = 0;
+
+  /// A page asked for while offline (the first page, or a tapped link): the
+  /// next reconnect or Retry opens it instead of dropping it.
+  String? _queuedLink;
   bool _autoRecoveryUsed = false;
   Timer? _loadWatchdog;
   Timer? _contentProbe;
@@ -156,8 +160,8 @@ class _WebViewScreenState extends State<WebViewScreen> {
         _isOffline = true;
         _showSplash = false;
       });
-      _nav.request(firstPage); // What _onConnectivityChanged will load.
-      return; // _onConnectivityChanged loads the page once a network appears.
+      _queuedLink = firstPage; // Loaded once a network appears.
+      return;
     }
     setState(() {});
     _load(firstPage);
@@ -361,7 +365,11 @@ class _WebViewScreenState extends State<WebViewScreen> {
       // Reload anyway.
     }
     if (!mounted) return;
-    _load(_nav.target); // The page that failed, not the one before it.
+    // A link queued while offline wins; otherwise the page that failed, not
+    // the one before it.
+    final queued = _queuedLink;
+    _queuedLink = null;
+    _load(queued ?? _nav.target);
   }
 
   Future<void> _retry() async {
@@ -383,9 +391,15 @@ class _WebViewScreenState extends State<WebViewScreen> {
     final offline = result.contains(ConnectivityResult.none);
     if (offline == _isOffline || !mounted) return;
     setState(() => _isOffline = offline);
-    // Back online: reload only what never loaded. A page already on screen
-    // (a shopper mid-checkout) is left as it is.
-    if (!offline && _started && (!_pageEverShown || _loadFailed)) {
+    if (offline || !_started) return;
+    // Back online: open a link tapped while offline, else reload only what
+    // never loaded. A page already on screen (a shopper mid-checkout) is left
+    // as it is.
+    final queued = _queuedLink;
+    if (queued != null && _pageEverShown && !_loadFailed) {
+      _queuedLink = null;
+      _load(queued);
+    } else if (queued != null || !_pageEverShown || _loadFailed) {
       unawaited(_retry());
     }
   }
@@ -395,7 +409,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     final url = PendingLink.take();
     if (url == null) return;
     if (_isOffline) {
-      _nav.request(url); // Loaded by _onConnectivityChanged when back online.
+      _queuedLink = url; // Opened by _onConnectivityChanged or Retry.
       return;
     }
     _load(url);
