@@ -165,6 +165,22 @@ live here. **The FCM *sender* is not built yet**: tokens are collected, but
 nothing sends to them. To send campaigns you need a Firebase service-account key
 and a sender (see the website repo's `docs/systems/web-push-notifications.md`).
 
+### Chat reply notifications (1.0.14, 26/10/2026)
+
+Since 1.0.14 the app tells the shop page it runs in the app
+([`lib/services/app_bridge.dart`](../lib/services/app_bridge.dart)): after a
+digitronics.ma page loads, `window.__digitronicsApp = {platform, version,
+fcmToken}` is set (own site only, every value JSON-encoded). The website chat
+then (1) shows no install invitation inside the app and (2) when the customer
+taps **Get a notification for each reply**, binds this token to the customer's
+own chat session — the server verifies the session from the WebView's chat
+cookie. The website sends that private notification to **this token only**,
+through the FCM HTTP v1 sender in the website repo (`src/lib/fcm.ts`), which
+stays idle until the `FCM_SERVICE_ACCOUNT_JSON` Worker secret exists. A tap
+opens `data.url` (`/{locale}?dt_chat=open`) through the existing router. The
+`all` topic is unchanged and never carries a chat reply. The feature is off
+until the inbox's site setting **Private "new reply" notifications** is on.
+
 ---
 
 ## 10. What lives elsewhere (can't be in this repo)
@@ -220,6 +236,11 @@ that never arrives, offline launch, links). CI runs it on every push.
 ## 13. Pending / TODO
 
 - [ ] Deep links: add Play signing SHA-256 to website assetlinks + WAF skip rule.
-- [ ] Build the FCM sender (website) to actually send push campaigns.
+- [ ] Build the FCM sender (website) to actually send push campaigns. (The
+      private chat-reply sender exists since 26/10/2026 and needs the
+      `FCM_SERVICE_ACCOUNT_JSON` website secret; campaigns still have none.)
+- [ ] Phone-test 1.0.14: reply notification tap (locked, background,
+      foreground, terminated), restore link `/{locale}/chat/reprendre#t=…`
+      opened in the app, logout stops notifications.
 - [ ] iOS build (not started).
 - [ ] Back up the signing keystore + password to a password manager.

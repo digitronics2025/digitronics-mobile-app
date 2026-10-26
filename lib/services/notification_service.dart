@@ -6,6 +6,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../constants/app_info.dart';
 import '../constants/urls.dart';
+import 'app_bridge.dart';
 import 'link_router.dart';
 
 @pragma('vm:entry-point')
@@ -78,9 +79,14 @@ class NotificationService {
       await messaging.subscribeToTopic('all');
       final token = await messaging.getToken();
       if (token != null) {
+        AppBridge.fcmToken.value = token;
         await _sendToken(token);
       }
-      messaging.onTokenRefresh.listen(_sendToken);
+      messaging.onTokenRefresh.listen((token) {
+        // The page re-binds a refreshed token the next time it loads.
+        AppBridge.fcmToken.value = token;
+        _sendToken(token);
+      });
     } catch (_) {
       // Non-fatal: notifications still display; only server targeting is lost.
     }

@@ -9,6 +9,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../constants/app_info.dart';
 import '../constants/urls.dart';
 import '../l10n/app_strings.dart';
+import '../services/app_bridge.dart';
 import '../services/external_link_service.dart';
 import '../services/link_router.dart';
 import '../services/load_report_service.dart';
@@ -301,6 +302,11 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _contentProbe?.cancel();
     _pageEverShown = true;
     _shownGeneration = _nav.generation;
+    // The shop page learns it runs in the app (and this device's push token)
+    // only on our own site; never on any other page.
+    if (AppUrls.isOwnSite(Uri.parse(url))) {
+      unawaited(_controller.runJavaScript(AppBridge.current()).catchError((_) {}));
+    }
     final locale = AppUrls.localeOf(Uri.parse(url));
     if (locale != null && locale != _locale) {
       _prefs?.setString(_lastLocaleKey, locale);
