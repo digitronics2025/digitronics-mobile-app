@@ -120,6 +120,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
       );
 
     PendingLink.url.addListener(_onPendingLink);
+    // The token can arrive after the first page was shown (Firebase starts
+    // after the WebView): publish the bridge again to the page on screen.
+    AppBridge.fcmToken.addListener(_publishAppBridge);
 
     _minSplashTimer = Timer(const Duration(milliseconds: 2500), () {
       _minSplashElapsed = true;
@@ -148,6 +151,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _contentProbe?.cancel();
     _blankCheck?.cancel();
     PendingLink.url.removeListener(_onPendingLink);
+    AppBridge.fcmToken.removeListener(_publishAppBridge);
     _connectivitySub.cancel();
     super.dispose();
   }
@@ -261,6 +265,16 @@ class _WebViewScreenState extends State<WebViewScreen> {
     });
   }
 
+  /// The own-site page last accepted as shown, for re-publishing the bridge.
+  String? _shownUrl;
+
+  void _publishAppBridge() {
+    final url = _shownUrl;
+    if (!mounted || url == null || !AppUrls.isOwnSite(Uri.parse(url))) return;
+    unawaited(Future<void>(() => _controller.runJavaScript(AppBridge.current()))
+        .catchError((_) {}));
+  }
+
   void _onPageFinished(String url) {
     if (!_nav.finishedSuccessfully(url)) return;
     unawaited(_confirmFinishedPage());
@@ -304,9 +318,8 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _shownGeneration = _nav.generation;
     // The shop page learns it runs in the app (and this device's push token)
     // only on our own site; never on any other page.
-    if (AppUrls.isOwnSite(Uri.parse(url))) {
-      unawaited(_controller.runJavaScript(AppBridge.current()).catchError((_) {}));
-    }
+    _shownUrl = url;
+    _publishAppBridge();
     final locale = AppUrls.localeOf(Uri.parse(url));
     if (locale != null && locale != _locale) {
       _prefs?.setString(_lastLocaleKey, locale);
