@@ -9,6 +9,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../constants/app_info.dart';
 import '../constants/urls.dart';
 import '../l10n/app_strings.dart';
+import '../services/app_bridge.dart';
 import '../services/external_link_service.dart';
 import '../services/link_router.dart';
 import '../services/load_report_service.dart';
@@ -119,6 +120,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
       );
 
     PendingLink.url.addListener(_onPendingLink);
+    // The token can arrive after the first page was shown (Firebase starts
+    // after the WebView): publish the bridge again to the page on screen.
+    AppBridge.fcmToken.addListener(_publishAppBridge);
 
     _minSplashTimer = Timer(const Duration(milliseconds: 2500), () {
       _minSplashElapsed = true;
@@ -147,6 +151,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _contentProbe?.cancel();
     _blankCheck?.cancel();
     PendingLink.url.removeListener(_onPendingLink);
+    AppBridge.fcmToken.removeListener(_publishAppBridge);
     _connectivitySub.cancel();
     super.dispose();
   }
@@ -260,6 +265,16 @@ class _WebViewScreenState extends State<WebViewScreen> {
     });
   }
 
+  /// The own-site page last accepted as shown, for re-publishing the bridge.
+  String? _shownUrl;
+
+  void _publishAppBridge() {
+    final url = _shownUrl;
+    if (!mounted || url == null || !AppUrls.isOwnSite(Uri.parse(url))) return;
+    unawaited(Future<void>(() => _controller.runJavaScript(AppBridge.current()))
+        .catchError((_) {}));
+  }
+
   void _onPageFinished(String url) {
     if (!_nav.finishedSuccessfully(url)) return;
     unawaited(_confirmFinishedPage());
@@ -301,6 +316,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _contentProbe?.cancel();
     _pageEverShown = true;
     _shownGeneration = _nav.generation;
+    // The shop page learns it runs in the app (and this device's push token)
+    // only on our own site; never on any other page.
+    _shownUrl = url;
+    _publishAppBridge();
     final locale = AppUrls.localeOf(Uri.parse(url));
     if (locale != null && locale != _locale) {
       _prefs?.setString(_lastLocaleKey, locale);

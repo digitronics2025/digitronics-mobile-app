@@ -6,6 +6,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../constants/app_info.dart';
 import '../constants/urls.dart';
+import 'app_bridge.dart';
 import 'link_router.dart';
 
 @pragma('vm:entry-point')
@@ -62,12 +63,20 @@ class NotificationService {
         ?.createNotificationChannel(_channel);
   }
 
+  /// Whether Android lets this app show notifications. A token is still issued
+  /// when the customer refuses, so the shop page only receives the token when
+  /// notifications can actually appear (AppBridge).
+  static bool _notificationsAllowed = false;
+
   static Future<void> _requestPermission() async {
-    await FirebaseMessaging.instance.requestPermission(
+    final settings = await FirebaseMessaging.instance.requestPermission(
       alert: true,
       badge: true,
       sound: true,
     );
+    _notificationsAllowed =
+        settings.authorizationStatus == AuthorizationStatus.authorized ||
+            settings.authorizationStatus == AuthorizationStatus.provisional;
   }
 
   /// Subscribe to the broadcast topic, then register the device token with the
@@ -78,9 +87,14 @@ class NotificationService {
       await messaging.subscribeToTopic('all');
       final token = await messaging.getToken();
       if (token != null) {
+        if (_notificationsAllowed) AppBridge.fcmToken.value = token;
         await _sendToken(token);
       }
-      messaging.onTokenRefresh.listen(_sendToken);
+      messaging.onTokenRefresh.listen((token) {
+        // The page re-binds a refreshed token the next time it loads.
+        if (_notificationsAllowed) AppBridge.fcmToken.value = token;
+        _sendToken(token);
+      });
     } catch (_) {
       // Non-fatal: notifications still display; only server targeting is lost.
     }

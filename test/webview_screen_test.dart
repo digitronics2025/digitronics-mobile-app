@@ -89,6 +89,11 @@ class FakeWebViewController extends PlatformWebViewController {
     await pendingClear?.future;
   }
 
+  /// Scripts the app runs without reading a result (the app bridge, 1.0.14).
+  final List<String> scripts = <String>[];
+  @override
+  Future<void> runJavaScript(String javaScript) async => scripts.add(javaScript);
+
   @override
   Future<Object> runJavaScriptReturningResult(String javaScript) {
     if (holdChecks) {

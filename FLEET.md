@@ -2,7 +2,7 @@
 
 Part of the TenTen fleet (map: claude-config → `skills/tenten-fleet`).
 Update this file in the SAME commit as any change to a cross-repo contract.
-Last verified: 2026-10-24
+Last verified: 2026-10-26
 
 ## What this app is
 
@@ -28,11 +28,14 @@ None — client app.
 | DigiTronics.ma website | WebView opens the locale root `https://digitronics.ma/{fr,ar,en}` directly ([lib/constants/urls.dart](./lib/constants/urls.dart)); App Links and notification URLs open only `https://digitronics.ma` pages ([lib/services/link_router.dart](./lib/services/link_router.dart)) | site session cookies | The WooCommerce-era paths were removed on 24/10/2026. Renaming a locale root on the site breaks the app's first page |
 | DigiTronics.ma API | `POST /api/v1/push/register` `{token, platform, appVersion}` ([lib/services/notification_service.dart](./lib/services/notification_service.dart)) | **NONE** — only User-Agent `DigitronicsApp/<version> (Android; FCM-register)`; fire-and-forget, re-sent on token refresh | server side (`app_push_tokens` table + WAF note) lives in the DigiTronics.ma repo |
 | DigiTronics.ma API | `POST /api/v1/observability/error` `{scope:'app', message, route, locale, userAgent}` ([lib/services/load_report_service.dart](./lib/services/load_report_service.dart)), since 1.0.13 | **NONE** — public, rate-limited per IP; User-Agent `DigitronicsApp/<version> (Android; load-report)` | Page-load failures and recoveries. The site accepts `scope:'app'` from 24/10/2026 and logs it at `warn` (`src/lib/observability/error-report-level.ts` there). An older site answers 200 with `VALIDATION_001` and drops it — harmless |
-| Firebase FCM | topic `all` subscription | google-services.json | |
+| DigiTronics.ma website (in-page) | `window.__digitronicsApp = {platform:'android', version, fcmToken?}` + `digitronics:app-bridge` event, injected after each own-site page load ([lib/services/app_bridge.dart](./lib/services/app_bridge.dart)), since 1.0.14 | none — data for the page only | Read by the website chat (`src/lib/website-chat/continuity-client.ts`) to hide the install card in the app and to bind the token to the customer's own chat session (`POST /api/v1/chat-push {kind:'fcm'}`, cookie-verified server-side). Renaming either side breaks private reply notifications |
+| DigiTronics.ma website → app | FCM HTTP v1 message to ONE token: `notification{title,body}` + `data{url:'/{locale}?dt_chat=open', type:'chat_reply'}` (website `src/lib/fcm.ts`) | Firebase service account (website secret `FCM_SERVICE_ACCOUNT_JSON`) | Tap routes through `PendingLink` like any notification URL. Never a topic |
+| Firebase FCM | topic `all` subscription | google-services.json | Legacy broadcast list only; never used for private chat replies |
 
 ## Planned, not built
 
-- Website → FCM campaign sender: tokens are collected, **nothing sends yet**.
+- Website → FCM campaign sender: tokens are collected, **no campaign sends yet**
+  (the per-token chat-reply sender exists, idle until its secret is set).
 - Deep links: need `/.well-known/assetlinks.json` served by the site + a
   Cloudflare WAF skip rule + the Play signing SHA-256 (all pending; the repo
   carries its own assetlinks.json copy).
@@ -47,6 +50,7 @@ optional `PLAY_SERVICE_ACCOUNT_JSON`.
 
 `lib/services/notification_service.dart`, `lib/constants/urls.dart`,
 `lib/services/load_report_service.dart`, `lib/services/link_router.dart`,
+`lib/services/app_bridge.dart`,
 `.well-known/assetlinks.json`, `docs/GUIDE.md`.
 
 ## Run & debug
