@@ -19,6 +19,7 @@ dependencies:
   in_app_review: ^2.0.10
   shared_preferences: ^2.3.4
   google_fonts: ^6.2.1
+  material_ui: ^1.11.0
 
 dev_dependencies:
   flutter_test:

@@ -44,6 +44,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned: an unpinned stable moved to 3.50, deprecated
+          # package:flutter/material.dart and turned main red overnight.
+          # Bump this deliberately, together with the code it needs.
+          flutter-version: 3.50.0
           cache: true
 
       # --- Restore gitignored files the Android build needs ---

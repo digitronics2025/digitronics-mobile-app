@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'screens/webview_screen.dart';
 import 'services/link_router.dart';
